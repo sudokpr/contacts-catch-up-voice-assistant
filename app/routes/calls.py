@@ -43,6 +43,45 @@ def _dict_from_unknown(value: Any) -> dict[str, Any]:
     return {}
 
 
+def _extract_tool_call_id(payload: dict[str, Any]) -> Optional[str]:
+    """
+    Extract the toolCallId from a Vapi tool-call envelope.
+    Checks message.toolCallList[0].id and message.toolWithToolCallList[0].toolCall.id.
+    """
+    message = _dict_from_unknown(payload.get("message"))
+    if not message:
+        return None
+
+    # Preferred: toolWithToolCallList[0].toolCall.id (most specific to this endpoint)
+    tool_with_list = message.get("toolWithToolCallList") or []
+    if isinstance(tool_with_list, list) and tool_with_list:
+        tool_call = _dict_from_unknown(tool_with_list[0]).get("toolCall")
+        if tool_call:
+            call_id = _dict_from_unknown(tool_call).get("id")
+            if call_id:
+                return str(call_id)
+
+    # Fallback: toolCallList[0].id
+    tool_call_list = message.get("toolCallList") or message.get("toolCalls") or []
+    if isinstance(tool_call_list, list) and tool_call_list:
+        call_id = _dict_from_unknown(tool_call_list[0]).get("id")
+        if call_id:
+            return str(call_id)
+
+    return None
+
+
+def _vapi_response(tool_call_id: Optional[str], result: Any) -> dict[str, Any]:
+    """
+    Wrap a tool result in the Vapi-expected response envelope:
+    { "results": [{ "toolCallId": "...", "result": ... }] }
+    If no toolCallId is available (e.g. direct test calls), returns the result unwrapped.
+    """
+    if tool_call_id:
+        return {"results": [{"toolCallId": tool_call_id, "result": result}]}
+    return result if isinstance(result, dict) else {"result": result}
+
+
 def _extract_tool_request(payload: dict[str, Any]) -> ToolCallRequest:
     """
     Extract tool arguments from either:
@@ -72,6 +111,16 @@ def _extract_tool_request(payload: dict[str, Any]) -> ToolCallRequest:
     message = _dict_from_unknown(payload.get("message"))
     if message:
         candidate_dicts.append(message)
+        # toolWithToolCallList gives the arguments for this specific tool endpoint
+        tool_with_list = message.get("toolWithToolCallList") or []
+        if isinstance(tool_with_list, list) and tool_with_list:
+            item = _dict_from_unknown(tool_with_list[0])
+            tool_call = _dict_from_unknown(item.get("toolCall"))
+            if tool_call:
+                function_obj = _dict_from_unknown(tool_call.get("function"))
+                if function_obj:
+                    candidate_dicts.append(_dict_from_unknown(function_obj.get("arguments")))
+
         tool_calls = message.get("toolCallList") or message.get("toolCalls") or []
         if isinstance(tool_calls, list):
             for item in tool_calls:
@@ -152,6 +201,7 @@ async def get_contact_context(body: dict[str, Any]):
     """
     Requirement 4.3: Returns the contact's name, last_call_note, and tags.
     """
+    tool_call_id = _extract_tool_call_id(body)
     request = _extract_tool_request(body)
     if not request.contact_id:
         logger.warning("get_contact_context missing contact_id. payload_keys=%s", list(body.keys()))
@@ -159,11 +209,11 @@ async def get_contact_context(body: dict[str, Any]):
 
     contact = await _get_contact(request.contact_id)
 
-    return {
+    return _vapi_response(tool_call_id, {
         "name": contact.name,
         "last_interaction_summary": contact.last_call_note,
         "tags": contact.tags,
-    }
+    })
 
 
 @router.post("/tools/get_memory", summary="Retrieve top semantic memories for a contact")
@@ -172,6 +222,7 @@ async def get_memory(body: dict[str, Any]):
     Requirement 4.4: Performs a semantic search using an enriched default context
     query built from the contact's name, tags, and last_call_note.
     """
+    tool_call_id = _extract_tool_call_id(body)
     request = _extract_tool_request(body)
     if not request.contact_id:
         logger.warning("get_memory missing contact_id. payload_keys=%s", list(body.keys()))
@@ -193,12 +244,14 @@ async def get_memory(body: dict[str, Any]):
             contact.contact_id,
             exc,
         )
-        return {
+        return _vapi_response(tool_call_id, {
             "memories": [],
             "status": "degraded",
             "note": "memory backend unavailable",
-        }
-    return {"memories": [{"text": e.text, "type": e.type, "timestamp": e.timestamp.isoformat()} for e in entries]}
+        })
+    return _vapi_response(tool_call_id, {
+        "memories": [{"text": e.text, "type": e.type, "timestamp": e.timestamp.isoformat()} for e in entries],
+    })
 
 
 @router.post("/tools/search_memory", summary="Targeted semantic search in memory for a contact")
@@ -207,6 +260,7 @@ async def search_memory_tool(body: dict[str, Any]):
     Requirement 4.5 / 4.6: Performs a targeted semantic search using the query
     string from the request body. Must respond within ~2 seconds.
     """
+    tool_call_id = _extract_tool_call_id(body)
     request = _extract_tool_request(body)
     if not request.contact_id:
         logger.warning("search_memory missing contact_id. payload_keys=%s", list(body.keys()))
@@ -228,12 +282,14 @@ async def search_memory_tool(body: dict[str, Any]):
             request.contact_id,
             exc,
         )
-        return {
+        return _vapi_response(tool_call_id, {
             "memories": [],
             "status": "degraded",
             "note": "memory backend unavailable",
-        }
-    return {"memories": [{"text": e.text, "type": e.type, "timestamp": e.timestamp.isoformat()} for e in entries]}
+        })
+    return _vapi_response(tool_call_id, {
+        "memories": [{"text": e.text, "type": e.type, "timestamp": e.timestamp.isoformat()} for e in entries],
+    })
 
 
 @router.post("/tools/save_memory", summary="Store a memory entry for a contact")
@@ -241,6 +297,7 @@ async def save_memory(body: dict[str, Any]):
     """
     Requirement 4.7: Stores the provided text as a memory entry in the Memory_Store.
     """
+    tool_call_id = _extract_tool_call_id(body)
     request = _extract_tool_request(body)
     if not request.contact_id:
         logger.warning("save_memory missing contact_id. payload_keys=%s", list(body.keys()))
@@ -268,11 +325,11 @@ async def save_memory(body: dict[str, Any]):
             request.contact_id,
             exc,
         )
-        return {
+        return _vapi_response(tool_call_id, {
             "status": "degraded",
             "note": "memory backend unavailable",
-        }
-    return {"status": "saved", "entry_id": entry_id}
+        })
+    return _vapi_response(tool_call_id, {"status": "saved", "entry_id": entry_id})
 
 
 @router.post("/tools/get_calendar_slots", summary="Return available calendar time slots")
@@ -280,6 +337,7 @@ async def get_calendar_slots(body: dict[str, Any]):
     """
     Requirement 4.8: Delegates to Calendar Service to return available slots.
     """
+    tool_call_id = _extract_tool_call_id(body)
     request = _extract_tool_request(body)
     if not request.contact_id:
         logger.warning("get_calendar_slots missing contact_id. payload_keys=%s", list(body.keys()))
@@ -291,10 +349,11 @@ async def get_calendar_slots(body: dict[str, Any]):
     try:
         from app.services.calendar import get_free_slots
         slots = await get_free_slots()
-        return {"slots": [s.model_dump() if hasattr(s, "model_dump") else s for s in slots]}
+        return _vapi_response(tool_call_id, {
+            "slots": [s.model_dump() if hasattr(s, "model_dump") else s for s in slots],
+        })
     except ImportError:
-        # Calendar service not yet implemented (task 18)
-        return {"slots": [], "note": "Calendar service not yet available"}
+        return _vapi_response(tool_call_id, {"slots": [], "note": "Calendar service not yet available"})
 
 
 @router.post("/tools/create_calendar_event", summary="Create a calendar event for a contact")
@@ -302,6 +361,7 @@ async def create_calendar_event(body: dict[str, Any]):
     """
     Requirement 4.8: Delegates to Calendar Service to create a calendar event.
     """
+    tool_call_id = _extract_tool_call_id(body)
     request = _extract_tool_request(body)
     if not request.contact_id:
         logger.warning("create_calendar_event missing contact_id. payload_keys=%s", list(body.keys()))
@@ -317,7 +377,9 @@ async def create_calendar_event(body: dict[str, Any]):
         end = datetime.fromisoformat(request.end_time) if request.end_time else None
 
         event = await create_event(start=start, end=end, contact=contact)
-        return {"status": "created", "event": event.model_dump() if hasattr(event, "model_dump") else event}
+        return _vapi_response(tool_call_id, {
+            "status": "created",
+            "event": event.model_dump() if hasattr(event, "model_dump") else event,
+        })
     except ImportError:
-        # Calendar service not yet implemented (task 18)
-        return {"status": "unavailable", "note": "Calendar service not yet available"}
+        return _vapi_response(tool_call_id, {"status": "unavailable", "note": "Calendar service not yet available"})

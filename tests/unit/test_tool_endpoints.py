@@ -2,6 +2,8 @@
 Unit tests for Vapi tool endpoints (task 11).
 
 Tests cover:
+- _extract_tool_call_id — extracts call ID from Vapi envelope
+- _vapi_response — wraps result in Vapi response envelope
 - POST /tools/get_contact_context — returns name, last_call_note, tags
 - POST /tools/get_memory — calls search_memory with enriched query
 - POST /tools/search_memory — calls search_memory with provided query
@@ -9,6 +11,7 @@ Tests cover:
 - POST /tools/get_calendar_slots — delegates to Calendar Service (or stub)
 - POST /tools/create_calendar_event — delegates to Calendar Service (or stub)
 - All endpoints return 404 if contact not found
+- All endpoints wrap response in Vapi envelope when toolCallId is present
 """
 
 import os
@@ -126,6 +129,90 @@ def client_no_contact():
                 yield c
 
 
+TOOL_CALL_ID = "call_MPsOl7416l70p78GdvgWsmyF"
+
+
+def _make_vapi_envelope(tool_name: str, arguments: dict, tool_call_id: str = TOOL_CALL_ID) -> dict:
+    """Build a realistic Vapi tool-call envelope (mirrors the real request format)."""
+    tool_call = {
+        "id": tool_call_id,
+        "type": "function",
+        "function": {"name": tool_name, "arguments": arguments},
+    }
+    return {
+        "message": {
+            "type": "tool-calls",
+            "toolCallList": [tool_call],
+            "toolWithToolCallList": [
+                {
+                    "type": "function",
+                    "function": {"name": tool_name},
+                    "toolCall": tool_call,
+                }
+            ],
+        }
+    }
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: _extract_tool_call_id
+# ---------------------------------------------------------------------------
+
+def test_extract_tool_call_id_from_tool_with_tool_call_list():
+    from app.routes.calls import _extract_tool_call_id
+
+    payload = _make_vapi_envelope("get_contact_context", {"contact_id": "c-1"})
+    assert _extract_tool_call_id(payload) == TOOL_CALL_ID
+
+
+def test_extract_tool_call_id_from_tool_call_list_fallback():
+    from app.routes.calls import _extract_tool_call_id
+
+    payload = {
+        "message": {
+            "toolCallList": [{"id": "call_fallback", "function": {"name": "get_memory", "arguments": {}}}]
+        }
+    }
+    assert _extract_tool_call_id(payload) == "call_fallback"
+
+
+def test_extract_tool_call_id_returns_none_for_flat_payload():
+    from app.routes.calls import _extract_tool_call_id
+
+    assert _extract_tool_call_id({"contact_id": "c-1"}) is None
+
+
+def test_extract_tool_call_id_returns_none_for_empty_message():
+    from app.routes.calls import _extract_tool_call_id
+
+    assert _extract_tool_call_id({"message": {}}) is None
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: _vapi_response
+# ---------------------------------------------------------------------------
+
+def test_vapi_response_wraps_result_when_tool_call_id_present():
+    from app.routes.calls import _vapi_response
+
+    out = _vapi_response("call_abc", {"name": "Alice"})
+    assert out == {"results": [{"toolCallId": "call_abc", "result": {"name": "Alice"}}]}
+
+
+def test_vapi_response_returns_result_directly_when_no_tool_call_id():
+    from app.routes.calls import _vapi_response
+
+    out = _vapi_response(None, {"name": "Alice"})
+    assert out == {"name": "Alice"}
+
+
+def test_vapi_response_supports_non_dict_result():
+    from app.routes.calls import _vapi_response
+
+    out = _vapi_response("call_abc", "plain string result")
+    assert out == {"results": [{"toolCallId": "call_abc", "result": "plain string result"}]}
+
+
 # ---------------------------------------------------------------------------
 # get_contact_context
 # ---------------------------------------------------------------------------
@@ -141,18 +228,32 @@ def test_get_contact_context_returns_name_note_tags(client_with_contact):
     assert "tech" in data["tags"]
 
 
-def test_get_contact_context_response_contract(client_with_contact):
-    """Contract test for Vapi tool response properties."""
+def test_get_contact_context_response_contract_flat(client_with_contact):
+    """Flat payload (no toolCallId) → result returned directly."""
     client, _ = client_with_contact
     response = client.post("/api/calls/tools/get_contact_context", json={"contact_id": CONTACT_ID})
     assert response.status_code == 200
     data = response.json()
-
-    # Response properties expected by the tool schema in Vapi
     assert set(data.keys()) == {"name", "last_interaction_summary", "tags"}
     assert isinstance(data["name"], str)
     assert isinstance(data["tags"], list)
     assert data["last_interaction_summary"] is None or isinstance(data["last_interaction_summary"], str)
+
+
+def test_get_contact_context_vapi_envelope_wraps_response(client_with_contact):
+    """Vapi envelope (with toolCallId) → wrapped in results array."""
+    client, _ = client_with_contact
+    payload = _make_vapi_envelope("get_contact_context", {"contact_id": CONTACT_ID})
+    response = client.post("/api/calls/tools/get_contact_context", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert "results" in data
+    assert len(data["results"]) == 1
+    assert data["results"][0]["toolCallId"] == TOOL_CALL_ID
+    result = data["results"][0]["result"]
+    assert result["name"] == "Alice"
+    assert "friend" in result["tags"]
+    assert result["last_interaction_summary"] == "We talked about her new job."
 
 
 def test_get_contact_context_404_if_not_found(client_no_contact):
@@ -259,6 +360,21 @@ def test_get_memory_accepts_nested_vapi_toolcall_payload(client_with_contact):
     assert response.status_code == 200
 
 
+def test_get_memory_vapi_envelope_wraps_response(client_with_contact):
+    from app.models.memory import MemoryEntry
+    client, _ = client_with_contact
+    entries = [MemoryEntry(contact_id=CONTACT_ID, type="highlight", text="New job at Acme.")]
+    with patch("app.services.qdrant.search_memory", new_callable=AsyncMock, return_value=entries):
+        response = client.post(
+            "/api/calls/tools/get_memory",
+            json=_make_vapi_envelope("get_memory", {"contact_id": CONTACT_ID}),
+        )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["results"][0]["toolCallId"] == TOOL_CALL_ID
+    assert data["results"][0]["result"]["memories"][0]["text"] == "New job at Acme."
+
+
 # ---------------------------------------------------------------------------
 # search_memory
 # ---------------------------------------------------------------------------
@@ -312,6 +428,21 @@ def test_search_memory_returns_degraded_when_backend_unavailable(client_with_con
     assert data["memories"] == []
 
 
+def test_search_memory_vapi_envelope_wraps_response(client_with_contact):
+    from app.models.memory import MemoryEntry
+    client, _ = client_with_contact
+    entries = [MemoryEntry(contact_id=CONTACT_ID, type="fact", text="Loves hiking.")]
+    with patch("app.services.qdrant.search_memory", new_callable=AsyncMock, return_value=entries):
+        response = client.post(
+            "/api/calls/tools/search_memory",
+            json=_make_vapi_envelope("search_memory", {"contact_id": CONTACT_ID, "query": "hobbies"}),
+        )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["results"][0]["toolCallId"] == TOOL_CALL_ID
+    assert data["results"][0]["result"]["memories"][0]["text"] == "Loves hiking."
+
+
 # ---------------------------------------------------------------------------
 # save_memory
 # ---------------------------------------------------------------------------
@@ -362,6 +493,20 @@ def test_save_memory_returns_degraded_when_backend_unavailable(client_with_conta
     assert data["status"] == "degraded"
 
 
+def test_save_memory_vapi_envelope_wraps_response(client_with_contact):
+    client, _ = client_with_contact
+    with patch("app.services.qdrant.store_memory", new_callable=AsyncMock, return_value="entry-xyz"):
+        response = client.post(
+            "/api/calls/tools/save_memory",
+            json=_make_vapi_envelope("save_memory", {"contact_id": CONTACT_ID, "text": "Moving to Seattle."}),
+        )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["results"][0]["toolCallId"] == TOOL_CALL_ID
+    assert data["results"][0]["result"]["status"] == "saved"
+    assert data["results"][0]["result"]["entry_id"] == "entry-xyz"
+
+
 # ---------------------------------------------------------------------------
 # get_calendar_slots
 # ---------------------------------------------------------------------------
@@ -377,6 +522,18 @@ def test_get_calendar_slots_returns_slots_or_stub(client_with_contact):
 def test_get_calendar_slots_404_if_not_found(client_no_contact):
     response = client_no_contact.post("/api/calls/tools/get_calendar_slots", json={"contact_id": "nonexistent"})
     assert response.status_code == 404
+
+
+def test_get_calendar_slots_vapi_envelope_wraps_response(client_with_contact):
+    client, _ = client_with_contact
+    response = client.post(
+        "/api/calls/tools/get_calendar_slots",
+        json=_make_vapi_envelope("get_calendar_slots", {"contact_id": CONTACT_ID}),
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["results"][0]["toolCallId"] == TOOL_CALL_ID
+    assert "slots" in data["results"][0]["result"]
 
 
 # ---------------------------------------------------------------------------
@@ -404,3 +561,18 @@ def test_create_calendar_event_404_if_not_found(client_no_contact):
         json={"contact_id": "nonexistent"},
     )
     assert response.status_code == 404
+
+
+def test_create_calendar_event_vapi_envelope_wraps_response(client_with_contact):
+    client, _ = client_with_contact
+    response = client.post(
+        "/api/calls/tools/create_calendar_event",
+        json=_make_vapi_envelope(
+            "create_calendar_event",
+            {"contact_id": CONTACT_ID, "start_time": "2025-06-01T10:00:00", "end_time": "2025-06-01T11:00:00"},
+        ),
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["results"][0]["toolCallId"] == TOOL_CALL_ID
+    assert "status" in data["results"][0]["result"]
