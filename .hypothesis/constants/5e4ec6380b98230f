@@ -1,4 +1,0 @@
-# file: /Users/gnx/workspace/projects/personal/contacts-catch-up-voice-assistant/app/db.py
-# hypothesis_version: 6.152.1
-
-['call_started_at', 'call_time_preference', 'contact_id', 'contact_method', 'contacts.db', 'last_call_note', 'last_call_outcome', 'last_called', 'last_spoken', 'name', 'next_call_at', 'phone', 'priority_boost', 'sip', 'social_handles', 'tags', 'timezone']

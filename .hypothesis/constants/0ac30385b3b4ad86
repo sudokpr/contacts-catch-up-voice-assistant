@@ -1,4 +1,0 @@
-# file: /Users/gnx/workspace/projects/personal/contacts-catch-up-voice-assistant/app/routes/contacts.py
-# hypothesis_version: 6.152.1
-
-[201, 204, 404, '/{contact_id}', 'Contact not found', 'contact_id']

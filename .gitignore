@@ -1,5 +1,6 @@
 # Kiro
 .kiro/
+.hypothesis/
 
 # Python
 .venv/

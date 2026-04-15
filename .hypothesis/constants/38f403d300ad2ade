@@ -1,4 +1,0 @@
-# file: /Users/gnx/workspace/projects/personal/contacts-catch-up-voice-assistant/app/workers/scheduler.py
-# hypothesis_version: 6.152.1
-
-[300, 3600, 'Daily cron job: done', 'Polling job: done', 'SCHEDULER_DAILY_HOUR', 'daily_cron', 'polling_5min']

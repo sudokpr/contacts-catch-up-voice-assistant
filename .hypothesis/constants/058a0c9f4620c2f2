@@ -1,4 +1,0 @@
-# file: /Users/gnx/workspace/projects/personal/contacts-catch-up-voice-assistant/app/services/vapi.py
-# hypothesis_version: 6.152.1
-
-[30.0, 'Authorization', 'Content-Type', 'application/json', 'assistantId', 'customer', 'id', 'number', 'phoneNumberId', 'sip', 'sipUri']

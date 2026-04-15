@@ -1,4 +1,0 @@
-# file: /Users/gnx/workspace/projects/personal/contacts-catch-up-voice-assistant/app/config.py
-# hypothesis_version: 6.152.1
-
-['.env', 'OPENAI_API_KEY', 'OPENAI_BASE_URL', 'OPENAI_MODEL', 'QDRANT_API_KEY', 'QDRANT_ENDPOINT', 'VAPI_API_KEY', 'VAPI_ASSISTANT_ID', 'VAPI_PHONE_NUMBER_ID', 'utf-8']

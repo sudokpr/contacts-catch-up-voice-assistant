@@ -1,4 +1,0 @@
-# file: /Users/gnx/workspace/projects/personal/contacts-catch-up-voice-assistant/app/routes/webhook.py
-# hypothesis_version: 6.152.1
-
-['/webhook/vapi', 'accepted', 'allow', 'already_processed', 'endedReason', 'extra', 'populate_by_name', 'status']

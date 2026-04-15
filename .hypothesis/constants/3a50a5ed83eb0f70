@@ -1,4 +1,0 @@
-# file: /Users/gnx/workspace/projects/personal/contacts-catch-up-voice-assistant/app/routes/calls.py
-# hypothesis_version: 6.152.1
-
-[400, 404, 409, '/tools/get_memory', '/tools/save_memory', '/tools/search_memory', 'allow', 'call_id', 'created', 'detail', 'entry_id', 'error', 'event', 'extra', 'highlight', 'initiated', 'memories', 'model_dump', 'name', 'note', 'query is required', 'saved', 'slots', 'status', 'tags', 'text', 'text is required', 'timestamp', 'type', 'unavailable']

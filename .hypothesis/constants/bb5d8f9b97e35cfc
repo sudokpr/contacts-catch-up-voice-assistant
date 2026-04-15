@@ -1,4 +1,0 @@
-# file: /Users/gnx/workspace/projects/personal/contacts-catch-up-voice-assistant/app/models/contact.py
-# hypothesis_version: 6.152.1
-
-[0.0, '^\\+[1-9]\\d{6,14}$', 'answered', 'busy', 'evening', 'morning', 'no_answer', 'none', 'phone', 'sip', 'specific_time']

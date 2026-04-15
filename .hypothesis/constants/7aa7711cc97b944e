@@ -1,4 +1,0 @@
-# file: /Users/gnx/workspace/projects/personal/contacts-catch-up-voice-assistant/app/services/qdrant.py
-# hypothesis_version: 6.152.1
-
-[768, 'contact_id', 'memories', 'text', 'timestamp', 'type']
