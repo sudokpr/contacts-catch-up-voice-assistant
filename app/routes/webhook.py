@@ -50,6 +50,7 @@ class VapiAssistant(BaseModel):
 
 
 class VapiWebhookPayload(BaseModel):
+    type: Optional[str] = None           # e.g. "end-of-call-report", "status-update", etc.
     call: Optional[VapiCall] = None
     transcript: Optional[str] = None
     customer: Optional[VapiCustomer] = None
@@ -386,12 +387,19 @@ async def vapi_webhook(
     to avoid Vapi webhook timeouts.
     """
     call_id = payload.call_id
+    event_type = payload.type or "unknown"
 
     logger.info(
-        "vapi_webhook received: call_id=%s customer=%s",
+        "vapi_webhook received: type=%s call_id=%s contact_id=%s",
+        event_type,
         call_id,
-        payload.customer.number if payload.customer else None,
+        payload.contact_id,
     )
+
+    # Only process end-of-call events — ignore status-updates, speech-updates, etc.
+    if payload.type and payload.type != "end-of-call-report":
+        logger.debug("vapi_webhook: ignoring event type=%s", payload.type)
+        return {"status": "ignored", "reason": f"event type '{payload.type}' not processed"}
 
     # Idempotency guard — skip duplicate deliveries
     if call_id and await is_call_already_processed(call_id):

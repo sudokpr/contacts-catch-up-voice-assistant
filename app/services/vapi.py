@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 _active_calls: dict[str, datetime] = {}
 
 VAPI_CALL_URL = "https://api.vapi.ai/call"
+VAPI_ASSISTANT_URL = "https://api.vapi.ai/assistant"
 
 
 class AlreadyOnCallError(Exception):
@@ -46,6 +47,66 @@ def _is_valid_uuid(value: str) -> bool:
         return False
 
 
+def _build_variable_values(contact: Contact, user_name: str) -> dict:
+    """
+    Build per-call variable values that are injected into the assistant's system prompt
+    via Vapi's {{variable}} template substitution.
+
+    The assistant's base prompt uses these placeholders:
+      {{user_name}}, {{contact_id}}, {{contact_name}}, {{contact_tags}}, {{last_call_note}}
+    """
+    return {
+        "user_name": user_name,
+        "contact_id": contact.contact_id,
+        "contact_name": contact.name,
+        "contact_tags": ", ".join(contact.tags) if contact.tags else "none",
+        "last_call_note": contact.last_call_note or "No previous calls recorded.",
+    }
+
+
+async def ensure_assistant_server_url(api_key: str, assistant_id: str, app_base: str) -> None:
+    """
+    Patch the Vapi assistant to set serverUrl if it's not already configured.
+    The serverUrl is required for Vapi to send end-of-call webhooks.
+    """
+    if not app_base:
+        logger.warning("APP_BASE not set — Vapi will not send end-of-call webhooks")
+        return
+
+    webhook_url = f"{app_base.rstrip('/')}/webhook/vapi"
+
+    try:
+        async with httpx.AsyncClient() as client:
+            # Fetch current assistant
+            resp = await client.get(
+                f"{VAPI_ASSISTANT_URL}/{assistant_id}",
+                headers={"Authorization": f"Bearer {api_key}"},
+                timeout=10.0,
+            )
+            resp.raise_for_status()
+            assistant = resp.json()
+
+            current_url = assistant.get("serverUrl") or ""
+            if current_url == webhook_url:
+                logger.info("Vapi assistant serverUrl already set to %s", webhook_url)
+                return
+
+            # Patch with the correct serverUrl
+            patch_resp = await client.patch(
+                f"{VAPI_ASSISTANT_URL}/{assistant_id}",
+                json={"serverUrl": webhook_url},
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                timeout=10.0,
+            )
+            patch_resp.raise_for_status()
+            logger.info("Patched Vapi assistant serverUrl to %s", webhook_url)
+    except Exception as exc:
+        logger.error("Failed to patch Vapi assistant serverUrl: %s", exc)
+
+
 async def initiate_call(contact: Contact) -> VapiCallResponse:
     """
     Calls POST /call on the Vapi API.
@@ -55,7 +116,7 @@ async def initiate_call(contact: Contact) -> VapiCallResponse:
     Persists call_started_at to the Contact DB record.
     """
     from app.config import get_settings
-    from app.db import get_db, contact_to_row
+    from app.db import get_db
 
     if contact.contact_id in _active_calls:
         raise AlreadyOnCallError(
@@ -72,15 +133,29 @@ async def initiate_call(contact: Contact) -> VapiCallResponse:
         await _set_no_answer(contact)
         return None  # type: ignore[return-value]
 
+    # Per-call variable values injected into the assistant's {{variable}} placeholders
+    variable_values = _build_variable_values(contact, settings.USER_NAME)
+
+    assistant_overrides = {
+        "variableValues": variable_values,
+    }
+
+    # metadata carries contact_id so the end-of-call webhook can identify the contact
+    metadata = {"contact_id": contact.contact_id, "contact_name": contact.name}
+
     # Build the Vapi payload based on contact method
     if contact.contact_method == "sip":
         payload = {
             "assistantId": settings.VAPI_ASSISTANT_ID,
+            "assistantOverrides": assistant_overrides,
+            "metadata": metadata,
             "customer": {"sipUri": contact.sip},
         }
     else:
         payload = {
             "assistantId": settings.VAPI_ASSISTANT_ID,
+            "assistantOverrides": assistant_overrides,
+            "metadata": metadata,
             "phoneNumberId": settings.VAPI_PHONE_NUMBER_ID,
             "customer": {"number": contact.phone},
         }
@@ -107,7 +182,6 @@ async def initiate_call(contact: Contact) -> VapiCallResponse:
             exc.response.status_code,
             exc.response.text,
         )
-        # Update last_call_outcome to no_answer in DB
         await _set_no_answer(contact)
         return None  # type: ignore[return-value]
     except httpx.RequestError as exc:

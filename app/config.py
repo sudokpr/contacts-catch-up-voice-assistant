@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_SECRET: str = ""
     GOOGLE_REFRESH_TOKEN: str = ""
 
+    # App identity (used in assistant prompts and webhook URL)
+    USER_NAME: str = "your friend"          # Name of the person on whose behalf calls are made
+    APP_BASE: str = ""                      # Public base URL, e.g. https://xyz.ngrok-free.dev
+
 
 _REQUIRED_VARS = [
     "VAPI_API_KEY",

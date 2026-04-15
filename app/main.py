@@ -8,10 +8,24 @@ async def lifespan(app: FastAPI):
     from app.db import init_db
     from app.services.qdrant import ensure_collection_exists
     from app.workers.scheduler import start_scheduler
+    from app.services.vapi import ensure_assistant_server_url
+    from app.config import get_settings
 
     await init_db()
     await ensure_collection_exists()
     start_scheduler()
+
+    # Ensure Vapi assistant has serverUrl configured for end-of-call webhooks
+    try:
+        settings = get_settings()
+        await ensure_assistant_server_url(
+            settings.VAPI_API_KEY,
+            settings.VAPI_ASSISTANT_ID,
+            settings.APP_BASE,
+        )
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("Could not patch Vapi assistant serverUrl: %s", exc)
 
     yield
 
