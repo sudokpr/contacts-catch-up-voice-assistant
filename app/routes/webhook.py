@@ -164,52 +164,6 @@ async def classify_outcome(ended_reason: Optional[str]) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Callback parsing
-# ---------------------------------------------------------------------------
-
-def _parse_relative_delta(value: str) -> Optional[timedelta]:
-    """Parse strings like '1 hour', '30 minutes', '2 days' into a timedelta."""
-    import re
-
-    value = value.strip().lower()
-    patterns = [
-        (r"(\d+)\s*day", lambda n: timedelta(days=int(n))),
-        (r"(\d+)\s*hour", lambda n: timedelta(hours=int(n))),
-        (r"(\d+)\s*minute", lambda n: timedelta(minutes=int(n))),
-        (r"(\d+)\s*week", lambda n: timedelta(weeks=int(n))),
-    ]
-    for pattern, builder in patterns:
-        m = re.search(pattern, value)
-        if m:
-            return builder(m.group(1))
-    return None
-
-
-def parse_callback_run_at(callback_type: str, callback_value: str) -> Optional[datetime]:
-    """
-    Parse a callback intent into an absolute UTC datetime.
-    Returns None if parsing fails.
-    """
-    now = datetime.now(UTC)
-    if callback_type == "relative":
-        delta = _parse_relative_delta(callback_value)
-        if delta is not None:
-            return now + delta
-        logger.warning("Could not parse relative callback value: '%s'", callback_value)
-        return None
-    elif callback_type == "absolute":
-        try:
-            dt = datetime.fromisoformat(callback_value)
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=UTC)
-            return dt
-        except ValueError as exc:
-            logger.warning("Could not parse absolute callback value '%s': %s", callback_value, exc)
-            return None
-    return None
-
-
-# ---------------------------------------------------------------------------
 # Background task — full implementation
 # ---------------------------------------------------------------------------
 
