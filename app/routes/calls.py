@@ -220,23 +220,36 @@ async def call_live_stream(contact_id: str):
 
 
 @router.post("/trigger/{contact_id}", summary="Manually trigger an outbound call for a contact")
-async def trigger_call(contact_id: str):
+async def trigger_call(contact_id: str, body: dict[str, Any] = {}):
     """
-    Manual trigger endpoint — initiates an immediate outbound call via Vapi
-    for the given contact_id. Useful for smoke testing before the dashboard exists.
+    Manual trigger endpoint — initiates an immediate outbound call via Vapi.
+    Accepts optional JSON body: { "occasion": "birthday"|"diwali"|"deal_congratulations"|... }
+    Useful for demo/smoke testing.
     """
     from app.services.vapi import initiate_call, AlreadyOnCallError, VapiError
+    from app.services.gifting import choose_gifts_for_occasion, order_gift
 
     contact = await _get_contact(contact_id)
+    occasion = (body or {}).get("occasion", "")
+
+    gift_summary = ""
+    if occasion and "send-gift" in (contact.tags or []):
+        gift_types = choose_gifts_for_occasion(occasion)
+        orders = []
+        for gt in gift_types:
+            order = await order_gift(contact, gt, occasion)
+            if order:
+                orders.append(order.description)
+        gift_summary = "; ".join(orders)
 
     try:
-        result = await initiate_call(contact)
+        result = await initiate_call(contact, occasion=occasion, gift_summary=gift_summary)
     except AlreadyOnCallError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     except VapiError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
 
-    return {"status": "initiated", "call_id": result.call_id}
+    return {"status": "initiated", "call_id": result.call_id, "occasion": occasion}
 
 
 # ---------------------------------------------------------------------------

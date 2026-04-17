@@ -428,6 +428,22 @@ async def vapi_webhook(
     call_id = payload.call_id
     event_type = payload.type or "unknown"
 
+    # Temporary diagnostic: log full payload to track down contact_id extraction failures
+    try:
+        import json as _json
+        raw_body = payload.model_dump(mode="json")
+        logger.info("vapi_webhook RAW PAYLOAD:\n%s", _json.dumps(raw_body, indent=2, default=str))
+        if payload.call:
+            logger.info(
+                "vapi_webhook call fields: id=%s metadata=%s assistant_overrides=%s extra_keys=%s",
+                payload.call.id,
+                payload.call.metadata,
+                getattr(payload.call, "assistant_overrides", None),
+                list((payload.call.model_extra or {}).keys()),
+            )
+    except Exception as _dbg_exc:
+        logger.warning("vapi_webhook debug dump failed: %s", _dbg_exc)
+
     logger.info(
         "vapi_webhook received: type=%s call_id=%s contact_id=%s",
         event_type,

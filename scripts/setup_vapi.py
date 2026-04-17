@@ -262,7 +262,7 @@ Bring in the specific thing you chose in Step 1. It must be a direct quote or cl
 "By the way, last time you mentioned [exact thing from memory]. How did that go?"
 
 - One natural follow-up at most.
-- Save anything new they share: call save_memory(contact_id="{{contact_id}}", text="...") silently.
+- If the contact brings up a specific topic mid-conversation and you want to recall more detail, call search_memory(contact_id="{{contact_id}}", query="<topic>") for a targeted lookup — e.g. if they mention their job search, query "job search interviews offer".
 
 ---
 
@@ -270,6 +270,17 @@ Bring in the specific thing you chose in Step 1. It must be a direct quote or cl
 
 STEP 5 — CLOSE:
 "Great talking — I'll pass everything back to {{user_name}}. Take care, {{contact_name}}!"
+
+---
+
+MEMORY CAPTURE — applies throughout the entire call, at every step:
+Whenever the contact says anything worth remembering, call save_memory(contact_id="{{contact_id}}", text="...") silently — do not wait for Step 3. Save immediately after they say it.
+
+Worth saving: new job, promotion, move, relationship news, health update, upcoming trip or event, a project they're working on, a worry or challenge they mentioned, a decision they're facing, anything they're excited or stressed about, any promise or commitment made ("I'll catch up with you next month").
+
+Not worth saving: small talk, weather, generic pleasantries, things already in pre-loaded memories.
+
+Format: write the memory as a plain sentence from the contact's perspective — e.g. "Just started a new role at Google as a senior PM" or "Planning a trip to Japan in August with the family".
 
 ---
 
