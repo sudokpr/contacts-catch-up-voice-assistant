@@ -121,6 +121,35 @@ async def get_contact_memories(contact_id: str, limit: int = 30):
         return []
 
 
+@router.get("/{contact_id}/memories/context")
+async def get_memory_context(contact_id: str):
+    """Return top memories as a pre-formatted string for Vapi variableValues injection."""
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT contact_id, tags, last_call_note FROM contacts WHERE contact_id = ?", (contact_id,)
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Contact not found")
+        tags = row[1] or ""
+        last_note = row[2] or ""
+    finally:
+        await db.close()
+
+    try:
+        from app.services.qdrant import search_memory
+        import json
+        tags_list = json.loads(tags) if tags.startswith("[") else tags.split(",")
+        query = f"{' '.join(t.strip() for t in tags_list)} {last_note}".strip()
+        entries = await search_memory(contact_id, query or contact_id, top_k=8)
+        entries.sort(key=lambda e: e.timestamp, reverse=True)
+        text = "\n".join(f"- [{e.type}] {e.text}" for e in entries)
+        return {"recent_memories": text}
+    except Exception:
+        return {"recent_memories": ""}
+
+
 @router.delete("/{contact_id}", status_code=204)
 async def delete_contact(contact_id: str):
     """Delete a contact and all associated memory entries."""

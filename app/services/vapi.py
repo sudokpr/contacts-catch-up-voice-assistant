@@ -13,6 +13,7 @@ from uuid import UUID
 import httpx
 
 from app.models.contact import Contact
+from app.services.gifting import FESTIVAL_OCCASIONS
 
 logger = logging.getLogger(__name__)
 
@@ -67,13 +68,15 @@ def _build_variable_values(
     occasion: str = "",
     gift_summary: str = "",
     gift_status: str = "",
+    recent_memories: str = "",
 ) -> dict:
     """
     Build per-call variable values injected into the assistant's system prompt
     via Vapi's {{variable}} template substitution.
 
     Placeholders: {{user_name}}, {{contact_id}}, {{contact_name}}, {{contact_tags}},
-                  {{last_call_note}}, {{occasion_context}}, {{tone_instructions}}, {{gift_status}}
+                  {{last_call_note}}, {{occasion_context}}, {{tone_instructions}},
+                  {{gift_status}}, {{recent_memories}}
     """
     occasion_context = ""
     if occasion == "birthday":
@@ -135,6 +138,24 @@ def _build_variable_values(
         "Maintain a business-friendly conversational style."
     )
 
+    # Only regular catch-up calls and CRM deal calls warrant a meeting ask.
+    # Birthday, anniversary, festival, and congratulations calls close warmly without it.
+    _no_meeting_occasions = {
+        "birthday", "anniversary", "deal_congratulations",
+        "promotion_congratulations", *FESTIVAL_OCCASIONS,
+    }
+    if occasion in _no_meeting_occasions:
+        meeting_ask_section = ""
+    else:
+        meeting_ask_section = (
+            "STEP 4 — MEETING ASK:\n"
+            f'"{user_name} was saying it\'d be great to catch up properly — '
+            "would you be up for a time sometime soon?\"\n\n"
+            f'- If yes: call get_calendar_slots(contact_id="{contact.contact_id}"), '
+            "offer 2 slots, confirm one, call create_calendar_event.\n"
+            "- If maybe/no: \"Totally fine — I'll pass that along.\"\n\n---"
+        )
+
     return {
         "user_name": user_name,
         "contact_id": contact.contact_id,
@@ -144,6 +165,8 @@ def _build_variable_values(
         "occasion_context": occasion_context,
         "tone_instructions": tone_instructions,
         "gift_status": gift_status,
+        "recent_memories": recent_memories,
+        "meeting_ask_section": meeting_ask_section,
     }
 
 
@@ -220,9 +243,26 @@ async def initiate_call(contact: Contact, *, occasion: str = "", gift_summary: s
     from app.services.gifting import get_gift_delivery_context
     gift_status = await get_gift_delivery_context(contact.contact_id)
 
+    # Pre-fetch top memories from Qdrant and inject into variableValues so the
+    # assistant has them even if the get_memory tool call fails mid-call.
+    recent_memories_text = ""
+    try:
+        from app.services.qdrant import search_memory
+        tags_joined = " ".join(contact.tags) if contact.tags else ""
+        query = f"{contact.name} {tags_joined} {contact.last_call_note or ''}".strip()
+        entries = await search_memory(contact.contact_id, query, top_k=8)
+        entries.sort(key=lambda e: e.timestamp, reverse=True)
+        if entries:
+            lines = [f"- [{e.type}] {e.text}" for e in entries]
+            recent_memories_text = "\n".join(lines)
+            logger.info("Pre-fetched %d memories for contact %s", len(entries), contact.contact_id)
+    except Exception as exc:
+        logger.warning("Could not pre-fetch memories for contact %s: %s", contact.contact_id, exc)
+
     # Per-call variable values injected into the assistant's {{variable}} placeholders
     variable_values = _build_variable_values(
-        contact, settings.USER_NAME, occasion=occasion, gift_summary=gift_summary, gift_status=gift_status
+        contact, settings.USER_NAME, occasion=occasion, gift_summary=gift_summary,
+        gift_status=gift_status, recent_memories=recent_memories_text,
     )
 
     assistant_overrides = {
