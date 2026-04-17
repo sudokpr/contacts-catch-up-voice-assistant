@@ -235,12 +235,9 @@ async def trigger_call(contact_id: str, body: dict[str, Any] = {}):
     gift_summary = ""
     if occasion and "send-gift" in (contact.tags or []):
         gift_types = choose_gifts_for_occasion(occasion)
-        orders = []
-        for gt in gift_types:
-            order = await order_gift(contact, gt, occasion)
-            if order:
-                orders.append(order.description)
-        gift_summary = "; ".join(orders)
+        order = await order_gift(contact.contact_id, contact.name, occasion, gift_types)
+        if order:
+            gift_summary = order.get("summary", "")
 
     try:
         result = await initiate_call(contact, occasion=occasion, gift_summary=gift_summary)

@@ -466,8 +466,43 @@ def create_assistant(client: httpx.Client, tool_ids: dict[str, str]) -> str:
 # Main
 # ---------------------------------------------------------------------------
 
+def patch_prompt_only(client: httpx.Client) -> None:
+    """
+    Update only the assistant's system prompt, preserving all other settings including toolIds.
+    Use this instead of a raw PATCH to avoid accidentally dropping tool associations.
+    """
+    print("\n=== Patching assistant prompt (preserving toolIds) ===\n")
+
+    assistant_id = os.environ.get("VAPI_ASSISTANT_ID", "")
+    if not assistant_id:
+        sys.exit("ERROR: VAPI_ASSISTANT_ID not set in environment.")
+
+    # Fetch current assistant to read provider, model, and toolIds
+    resp = client.get(f"{VAPI_ASSISTANT_URL}/{assistant_id}", headers=HEADERS, timeout=15)
+    resp.raise_for_status()
+    current = resp.json()
+    model = current.get("model", {})
+    tool_ids = model.get("toolIds") or []
+
+    patch_resp = client.patch(
+        f"{VAPI_ASSISTANT_URL}/{assistant_id}",
+        headers=HEADERS,
+        json={"model": {
+            "provider": model["provider"],
+            "model": model["model"],
+            "toolIds": tool_ids,
+            "messages": [{"role": "system", "content": SYSTEM_PROMPT}],
+        }},
+        timeout=15,
+    )
+    patch_resp.raise_for_status()
+    restored = patch_resp.json().get("model", {}).get("toolIds") or []
+    print(f"  ✓ Prompt updated — {len(restored)} tools preserved on assistant {assistant_id}")
+
+
 def main() -> None:
     skip_numbers = "--skip-numbers" in sys.argv
+    patch_only = "--patch-prompt" in sys.argv
 
     print("Vapi provisioning")
     print(f"  APP_BASE    : {APP_BASE}")
@@ -478,6 +513,10 @@ def main() -> None:
         print("  --skip-numbers: skipping phone number provisioning")
 
     with httpx.Client() as client:
+        if patch_only:
+            patch_prompt_only(client)
+            return
+
         pstn_id = ""
         sip_trunk_id = ""
 

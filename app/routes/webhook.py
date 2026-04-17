@@ -453,7 +453,7 @@ async def vapi_webhook(
 
     # Only process end-of-call events — ignore status-updates, speech-updates, etc.
     if payload.type and payload.type != "end-of-call-report":
-        logger.debug("vapi_webhook: ignoring event type=%s", payload.type)
+        logger.info("vapi_webhook: ignoring event type=%s", payload.type)
         return {"status": "ignored", "reason": f"event type '{payload.type}' not processed"}
 
     # Idempotency guard — skip duplicate deliveries
