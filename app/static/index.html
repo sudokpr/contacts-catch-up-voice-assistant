@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Contacts Catch-Up</title>
+  <title>RelayAI — Relationship Manager</title>
   <script src="/static/tailwind.js"></script>
   <!-- Vapi Web SDK: ESM module, exposes window.VapiClass once loaded -->
   <script type="module">
@@ -36,7 +36,7 @@
           <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 0 0 2.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 0 1-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 0 0-1.091-.852H4.5A2.25 2.25 0 0 0 2.25 4.5v2.25Z"/>
         </svg>
       </div>
-      <span class="font-semibold text-slate-100">Contacts Catch-Up</span>
+      <span class="font-semibold text-slate-100">RelayAI</span>
     </div>
     <button onclick="openModal()" class="flex items-center gap-1.5 bg-sky-500 hover:bg-sky-600 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition-colors">
       <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
@@ -65,7 +65,8 @@
           <svg class="w-12 h-12 mx-auto mb-3 text-slate-800" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z"/>
           </svg>
-          <p class="text-sm">Select a contact or create one</p>
+          <p class="text-sm">Select a contact or add one</p>
+          <p class="text-xs text-slate-700 mt-1">Personal friends · Business partners</p>
         </div>
       </div>
     </main>
@@ -144,6 +145,23 @@
             <label class="block text-xs font-medium text-slate-400 mb-1">Tags <span class="text-slate-600">(comma-separated)</span></label>
             <input id="f-tags" type="text" placeholder="friend, college, tech"
               class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-sky-500" />
+          </div>
+
+          <div class="col-span-2 border-t border-slate-800 pt-3">
+            <label class="block text-xs font-medium text-slate-400 mb-1">Relationship Type</label>
+            <select id="f-rel-type" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-sky-500">
+              <option value="personal">Personal</option>
+              <option value="business">Business</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs font-medium text-slate-400 mb-1">Birthday</label>
+            <input id="f-birthday" type="date" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-sky-500" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-400 mb-1">Anniversary / Work Anniversary</label>
+            <input id="f-anniversary" type="date" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-sky-500" />
           </div>
 
           <div>
@@ -351,7 +369,10 @@ function outcomeColor(o) {
 }
 
 function renderDetailSkeleton(c) {
-  const tags = (c.tags || []).map(t => `<span class="bg-slate-800 text-slate-300 text-xs px-2 py-0.5 rounded-full">${t}</span>`).join('');
+  const relBadge = c.relationship_type === 'business'
+    ? '<span class="bg-amber-900/60 text-amber-400 text-xs px-2 py-0.5 rounded-full font-medium">Business</span>'
+    : '<span class="bg-sky-900/60 text-sky-400 text-xs px-2 py-0.5 rounded-full font-medium">Personal</span>';
+  const tags = [(relBadge), ...(c.tags || []).map(t => `<span class="bg-slate-800 text-slate-300 text-xs px-2 py-0.5 rounded-full">${t}</span>`)].join('');
   const socials = [
     c.social_handles?.twitter   ? `<a href="https://twitter.com/${c.social_handles.twitter}" target="_blank" class="text-sky-400 hover:underline text-sm">Twitter</a>` : '',
     c.social_handles?.instagram ? `<a href="https://instagram.com/${c.social_handles.instagram}" target="_blank" class="text-sky-400 hover:underline text-sm">Instagram</a>` : '',
@@ -419,6 +440,14 @@ function renderDetailSkeleton(c) {
         <p class="text-xs text-slate-500 mb-1">Last Outcome</p>
         <p class="text-sm ${outcomeColor(c.last_call_outcome)}">${c.last_call_outcome || '—'}</p>
       </div>
+      ${c.birthday ? `<div class="bg-slate-900 rounded-xl p-4 border border-slate-800">
+        <p class="text-xs text-slate-500 mb-1">Birthday</p>
+        <p class="text-sm">${c.birthday}</p>
+      </div>` : ''}
+      ${c.anniversary ? `<div class="bg-slate-900 rounded-xl p-4 border border-slate-800">
+        <p class="text-xs text-slate-500 mb-1">Anniversary</p>
+        <p class="text-sm">${c.anniversary}</p>
+      </div>` : ''}
     </div>
 
     ${c.last_call_note ? `
@@ -484,7 +513,7 @@ async function loadMemories(contactId) {
     }
     // Sort newest first
     memories.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-    const typeColor = { highlight: 'text-amber-400', fact: 'text-sky-400', summary: 'text-emerald-400', social: 'text-purple-400' };
+    const typeColor = { highlight: 'text-amber-400', fact: 'text-sky-400', summary: 'text-emerald-400', social: 'text-purple-400', commitment: 'text-rose-400' };
     el.innerHTML = memories.map(m => `
       <div class="flex items-start gap-3 py-2 border-b border-slate-800 last:border-0">
         <span class="text-xs font-medium ${typeColor[m.type] || 'text-slate-500'} mt-0.5 w-16 shrink-0">${m.type}</span>
@@ -629,6 +658,11 @@ async function _startWebCall(contactId) {
       contact_name: contact.name,
       contact_tags: (contact.tags || []).join(', ') || 'none',
       last_call_note: contact.last_call_note || 'No previous calls recorded.',
+      occasion_context: '',
+      tone_instructions: contact.relationship_type === 'business'
+        ? 'Use a professional, respectful, and warm tone. Be concise and mindful of their time.'
+        : 'Use a casual, warm, friendly tone. Informal language is perfectly fine.',
+      gift_status: '',
     },
   });
 
@@ -822,6 +856,9 @@ function openEditModal(contactId) {
   document.getElementById('f-twitter').value = c.social_handles?.twitter || '';
   document.getElementById('f-instagram').value = c.social_handles?.instagram || '';
   document.getElementById('f-linkedin').value = c.social_handles?.linkedin || '';
+  document.getElementById('f-rel-type').value = c.relationship_type || 'personal';
+  document.getElementById('f-birthday').value = c.birthday || '';
+  document.getElementById('f-anniversary').value = c.anniversary || '';
 
   setMethod(c.contact_method || 'phone');
   document.getElementById('f-sip').value = c.sip || '';
@@ -868,6 +905,9 @@ async function submitContactForm(e) {
       instagram: document.getElementById('f-instagram').value.trim() || null,
       linkedin: document.getElementById('f-linkedin').value.trim() || null,
     },
+    relationship_type: document.getElementById('f-rel-type').value || 'personal',
+    birthday: document.getElementById('f-birthday').value || null,
+    anniversary: document.getElementById('f-anniversary').value || null,
   };
 
   const submitBtn = document.getElementById('form-submit-label');

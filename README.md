@@ -1,35 +1,55 @@
-# Contacts Catch-Up Voice Assistant
+# RelayAI — Relationship Manager
 
-> *"You haven't spoken to Maya in 47 days. Want me to give her a call?"*
+> *"Arjun secured a major funding round today. I've ordered a bouquet and I'm calling him now to congratulate."*
 
-We all have people in our lives we genuinely care about but consistently fail to keep up with — old college friends, parents of your kids' friends, former colleagues you swore you'd stay in touch with. Life gets busy. Months pass. The guilt builds.
+Managing relationships — personal or professional — takes consistent effort that busy people don't always have. Old friends drift away. Business partners feel forgotten. Opportunities to reach out at the right moment get missed.
 
-This project is a **personal relationship manager that actually takes action**. It runs in the background, scores your contacts by how overdue a conversation is, and places outbound AI phone calls on your behalf — armed with context about who they are, what you last talked about, and what's been happening in their life. After every call it updates its memory so the next one feels even more personal.
+**RelayAI is an autonomous AI relationship manager** that works for both personal contacts and business partners. It runs in the background, monitors news and occasions, orders gifts, and places outbound AI phone calls on your behalf — with full context about who they are, what you last talked about, and what's happening in their life right now. No human needs to remember anything. The AI handles it all.
 
 ---
 
 ## What it actually does
 
-A scheduler runs periodically and picks the most overdue contact using a scoring engine (time since last call, priority boosts, preferred call times). It then:
+RelayAI runs several background jobs every day, each targeting a different relationship signal:
 
-1. **Calls them** via Vapi — a real phone call, not a notification
-2. **Introduces itself** as calling on your behalf, with your name and context about your relationship
-3. **Remembers the conversation** — highlights, key facts, and a summary are stored in a vector database (Qdrant)
-4. **Updates your dashboard** in real-time as the call happens via Server-Sent Events
-5. **Logs the outcome** — answered, busy, or no-answer — and schedules the next attempt accordingly
+**Regular catch-ups:** A scoring engine ranks contacts by how overdue they are (time since last call, priority boosts, timezone-aware call windows) and calls the top-ranked ones each morning.
+
+**Birthday & anniversary calls:** Detects today's birthdays and anniversaries across all contacts. For contacts tagged `send-gift`, automatically orders flowers + a custom mug before the call.
+
+**Festival gifting:** On major holidays (Diwali, Christmas, Eid, New Year, Holi), sends sweet boxes to business partners and friends tagged `send-gift`, then calls to wish them.
+
+**Deal-news triggered calls:** Monitors LinkedIn (and other social feeds) for deal announcements, funding rounds, and major contracts. When a business partner shares big news, the AI calls to congratulate them and sends a bouquet — no human prompt needed.
+
+**CRM deal closure calls:** When a deal closes with one of your contacts (via Salesforce or a mock adapter), the AI calls to thank them and celebrate the partnership.
+
+**LinkedIn promotion detection:** Detects when a business contact announces a promotion or new senior role, then calls to congratulate them.
+
+**Past-promise follow-ups:** If a call summary mentions "next quarter", "next month", or similar commitments, the scheduler automatically sets a follow-up call for the right time.
+
+**Tone adaptation:** Uses a professional tone for business contacts and a casual, warm tone for personal contacts — all from a single AI assistant.
+
+**Gift delivery status:** If a gift was recently ordered for a contact, the AI naturally mentions it during the call ("a bouquet is on its way to you!").
+
+After every call:
+1. Highlights and key facts are stored in Qdrant (semantic memory)
+2. The contact record is updated with outcome and summary
+3. The dashboard refreshes in real-time via Server-Sent Events
 
 ---
 
-## Example conversations
+## Example calls
 
-**Catching up with a friend you haven't spoken to in months:**
-> "Hey Maya! This is an AI assistant calling on behalf of Kirthi. He's been meaning to catch up for a while and wanted to check in — last time you two spoke, you'd just started a new job. How's that going?"
+**Catching up with a friend:**
+> "Hey Maya! This is an AI assistant calling on behalf of Kirthi — hope I'm not catching you at a bad time? Last time you spoke you'd just started leading that Kubernetes migration — how did that go?"
 
-**Reconnecting after a long gap:**
-> "Hi David, calling on behalf of Kirthi. He mentioned you were in London recently — did you end up making it there? He'd love to hear how it went."
+**Congratulating a business partner on a funding round:**
+> "Congratulations Arjun! We just saw the news about your seed funding — absolutely thrilled for you and the team! Kirthi also arranged a little something — a bouquet is on its way to you."
 
-**Handling a busy contact gracefully:**
-> If no one picks up, the call is logged as `no_answer` and the contact moves back into the queue for another attempt — no awkward voicemails unless you configure it.
+**Festival wishes:**
+> "Happy Diwali, Priya! Calling on behalf of Kirthi to wish you and your family a wonderful celebration. He's also sent a sweet box your way — hope it arrives in time!"
+
+**Honoring a past commitment:**
+> "Hi David — Kirthi mentioned last quarter you were open to catching up in three months. He wanted to make sure that didn't slip through the cracks — would you be up for a time soon?"
 
 ---
 
@@ -149,12 +169,19 @@ Populates the database with 5 realistic contacts — complete with past call not
 python scripts/seed_contacts.py
 ```
 
-This creates contacts like:
+This creates 8 contacts — 5 personal and 3 business:
+
+**Personal contacts:**
 - **Maya Patel** — college friend, just got promoted to Staff Engineer, cat had kittens
 - **David Okafor** — ex-colleague who left Stripe to build a climate-tech startup
 - **Sarah Chen** — family friend who moved to London, working on a novel
 - **Raj Sundaram** — university friend in Singapore, competitive chess player
 - **Priya Menon** — school friend, doctor considering a Johns Hopkins fellowship
+
+**Business partners:**
+- **Arjun Mehta** — SaaS founder in Mumbai; birthday set to today → triggers birthday call + mug + flowers demo; LinkedIn fixture shows seed funding → triggers deal congratulations call
+- **Priya Sharma** — VP Sales at a Delhi logistics firm; LinkedIn fixture shows ₹10 crore contract → triggers deal congratulations call
+- **Marcus Weber** — Managing Partner at a Berlin VC firm; LinkedIn fixture shows promotion → triggers congratulations call
 
 Each contact has realistic `last_called` timestamps, outcomes, call notes, and multiple memory entries (highlights, facts, summaries, social updates) so the AI has rich context to draw on during a call. Safe to re-run — skips contacts that already exist by name.
 

@@ -6,7 +6,7 @@ to avoid Vapi webhook timeouts.
 """
 
 import logging
-from datetime import datetime, UTC
+from datetime import datetime, UTC, timedelta
 from typing import Any, Optional
 
 from fastapi import APIRouter, BackgroundTasks
@@ -348,19 +348,49 @@ async def process_call_webhook(payload: VapiWebhookPayload) -> None:
         except Exception as exc:
             logger.error("Failed to update contact %s after webhook: %s", contact_id, exc)
 
-        # --- Step 5: Clear next_call_at (callback scheduling removed; no local LLM) ---
-        try:
-            db = await get_db()
+        # --- Step 5: Detect commitment phrases → schedule follow-up + store commitment memory ---
+        _COMMITMENT_PHRASES = [
+            ("next quarter", 90),
+            ("next month", 30),
+            ("in a few weeks", 21),
+            ("catch up soon", 21),
+            ("next week", 7),
+            ("let's reconnect", 60),
+            ("talk soon", 14),
+        ]
+        if summary and outcome == "answered" and contact_id:
+            for phrase, days in _COMMITMENT_PHRASES:
+                if phrase.lower() in summary.lower():
+                    follow_up_at = now + timedelta(days=days)
+                    try:
+                        await store_memory(MemoryEntry(
+                            contact_id=contact_id,
+                            type="commitment",
+                            text=f"Follow-up commitment: ~{days} days out (detected phrase: '{phrase}')",
+                        ))
+                        from app.workers.scheduler import schedule_one_off_call
+                        schedule_one_off_call(contact_id, follow_up_at)
+                        logger.info(
+                            "Commitment detected for contact %s: '%s' → follow-up in %d days (%s)",
+                            contact_id, phrase, days, follow_up_at.isoformat()
+                        )
+                    except Exception as exc:
+                        logger.error("Failed to schedule commitment follow-up for contact %s: %s", contact_id, exc)
+                    break
+        else:
+            # Clear next_call_at if no commitment detected
             try:
-                await db.execute(
-                    "UPDATE contacts SET next_call_at = NULL WHERE contact_id = ?",
-                    (contact_id,),
-                )
-                await db.commit()
-            finally:
-                await db.close()
-        except Exception as exc:
-            logger.error("Failed to clear next_call_at for contact %s: %s", contact_id, exc)
+                db = await get_db()
+                try:
+                    await db.execute(
+                        "UPDATE contacts SET next_call_at = NULL WHERE contact_id = ?",
+                        (contact_id,),
+                    )
+                    await db.commit()
+                finally:
+                    await db.close()
+            except Exception as exc:
+                logger.error("Failed to clear next_call_at for contact %s: %s", contact_id, exc)
 
     # --- Step 6: Release active-call guard and notify SSE clients ---
     if contact_id:

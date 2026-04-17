@@ -18,12 +18,12 @@ async def create_contact(contact: Contact):
                 contact_id, name, phone, sip, contact_method, tags, timezone,
                 last_called, last_spoken, call_time_preference, preferred_time_window,
                 next_call_at, priority_boost, last_call_outcome, last_call_note,
-                call_started_at, social_handles
+                call_started_at, social_handles, birthday, anniversary, relationship_type
             ) VALUES (
                 :contact_id, :name, :phone, :sip, :contact_method, :tags, :timezone,
                 :last_called, :last_spoken, :call_time_preference, :preferred_time_window,
                 :next_call_at, :priority_boost, :last_call_outcome, :last_call_note,
-                :call_started_at, :social_handles
+                :call_started_at, :social_handles, :birthday, :anniversary, :relationship_type
             )
             """,
             row,
@@ -87,7 +87,9 @@ async def update_contact(contact_id: str, contact: Contact):
                 preferred_time_window = :preferred_time_window,
                 next_call_at = :next_call_at, priority_boost = :priority_boost,
                 last_call_outcome = :last_call_outcome, last_call_note = :last_call_note,
-                call_started_at = :call_started_at, social_handles = :social_handles
+                call_started_at = :call_started_at, social_handles = :social_handles,
+                birthday = :birthday, anniversary = :anniversary,
+                relationship_type = :relationship_type
             WHERE contact_id = :contact_id
             """,
             row,

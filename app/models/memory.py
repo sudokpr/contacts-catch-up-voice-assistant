@@ -7,7 +7,7 @@ from uuid import uuid4
 class MemoryEntry(BaseModel):
     entry_id: str = Field(default_factory=lambda: str(uuid4()))
     contact_id: str
-    type: Literal["summary", "highlight", "fact", "social"]
+    type: Literal["summary", "highlight", "fact", "social", "commitment"]
     text: str
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 

@@ -48,6 +48,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # ---------------------------------------------------------------------------
 
 CONTACTS = [
+    # ── Personal contacts ──────────────────────────────────────────────────────
     {
         "name": "Maya Patel",
         "phone": "+12125550101",
@@ -164,6 +165,72 @@ CONTACTS = [
             ("social", "Priya posted on LinkedIn about a medical conference she spoke at in Bangalore."),
         ],
     },
+
+    # ── Business partners ──────────────────────────────────────────────────────
+    {
+        "name": "Arjun Mehta",
+        "phone": "+912250001001",
+        "contact_method": "phone",
+        "relationship_type": "business",
+        "tags": ["founder", "saas", "mumbai", "send-gift"],
+        "timezone": "Asia/Kolkata",
+        "last_call_outcome": "answered",
+        "last_call_note": "Arjun's SaaS platform just hit 500 paying customers. He's looking to expand into Southeast Asia next quarter. Very excited about the traction.",
+        "days_since_last_call": 25,
+        "call_time_preference": "morning",
+        "priority_boost": 1.5,
+        "birthday": "2000-04-17",   # today — triggers birthday call demo
+        "social_handles": {"linkedin": "arjunmehta-founder"},
+        "memories": [
+            ("highlight", "We hit 500 paying customers last month — still can't believe it."),
+            ("highlight", "Planning to expand into Southeast Asia, starting with Singapore."),
+            ("fact", "Arjun Mehta is the founder of a SaaS startup based in Mumbai, India."),
+            ("fact", "His startup crossed 500 customers in early 2026 and secured ₹5 crore in seed funding."),
+            ("summary", "Strong quarterly check-in. Arjun's SaaS platform is growing fast — 500 customers, seed funding secured, and a Southeast Asia expansion in the works. He mentioned catching up next quarter to discuss potential partnership opportunities."),
+        ],
+    },
+    {
+        "name": "Priya Sharma",
+        "phone": "+911140002002",
+        "contact_method": "phone",
+        "relationship_type": "business",
+        "tags": ["business", "logistics", "delhi", "send-gift"],
+        "timezone": "Asia/Kolkata",
+        "last_call_outcome": "answered",
+        "last_call_note": "Priya's team just closed a major ₹10 crore logistics contract. She's scaling the operations team rapidly and is looking for tech partners.",
+        "days_since_last_call": 40,
+        "call_time_preference": "morning",
+        "priority_boost": 1.0,
+        "social_handles": {"linkedin": "priyas-logistics"},
+        "memories": [
+            ("highlight", "Closed the biggest contract of my career last week — ₹10 crore with a national retailer."),
+            ("highlight", "Hiring 50 people over the next quarter. The scale-up is real now."),
+            ("fact", "Priya Sharma is VP Sales at a logistics firm based in Delhi."),
+            ("fact", "Her team closed a ₹10 crore contract in early 2026 and is scaling operations."),
+            ("summary", "Excellent catch-up. Priya's team closed a landmark deal and is in rapid scale-up mode. She's looking for reliable tech partners for fleet management. Left the door open for a follow-up call next month."),
+        ],
+    },
+    {
+        "name": "Marcus Weber",
+        "phone": "+4930500003003",
+        "contact_method": "phone",
+        "relationship_type": "business",
+        "tags": ["vc", "berlin", "investor", "fintech"],
+        "timezone": "Europe/Berlin",
+        "last_call_outcome": "answered",
+        "last_call_note": "Marcus just made Managing Partner at Weber Capital. He's leading a new fintech fund and was open to meeting portfolio companies from South Asia.",
+        "days_since_last_call": 55,
+        "call_time_preference": "morning",
+        "priority_boost": 0.5,
+        "social_handles": {"linkedin": "marcus-weber-vc"},
+        "memories": [
+            ("highlight", "Just got promoted to Managing Partner — it's been a long journey."),
+            ("highlight", "We're closing a new €50M fintech fund next quarter."),
+            ("fact", "Marcus Weber was promoted to Managing Partner at Weber Capital in early 2026."),
+            ("fact", "He is leading a new €50M fintech-focused fund based out of Berlin."),
+            ("summary", "Great reconnection call. Marcus recently got promoted to Managing Partner and is excited about a new fintech fund. Very interested in South Asian market opportunities. Suggested reconnecting when he's next in Asia."),
+        ],
+    },
 ]
 
 
@@ -228,6 +295,9 @@ async def seed() -> None:
                 instagram=sh.get("instagram"),
                 linkedin=sh.get("linkedin"),
             ),
+            birthday=data.get("birthday"),
+            anniversary=data.get("anniversary"),
+            relationship_type=data.get("relationship_type", "personal"),
         )
 
         db = await get_db()
@@ -237,12 +307,12 @@ async def seed() -> None:
                     contact_id, name, phone, sip, contact_method, tags, timezone,
                     last_called, last_spoken, call_time_preference, preferred_time_window,
                     next_call_at, priority_boost, last_call_outcome, last_call_note,
-                    call_started_at, social_handles
+                    call_started_at, social_handles, birthday, anniversary, relationship_type
                 ) VALUES (
                     :contact_id, :name, :phone, :sip, :contact_method, :tags, :timezone,
                     :last_called, :last_spoken, :call_time_preference, :preferred_time_window,
                     :next_call_at, :priority_boost, :last_call_outcome, :last_call_note,
-                    :call_started_at, :social_handles
+                    :call_started_at, :social_handles, :birthday, :anniversary, :relationship_type
                 )""",
                 contact_to_row(contact),
             )

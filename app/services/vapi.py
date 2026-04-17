@@ -61,20 +61,89 @@ def _is_valid_uuid(value: str) -> bool:
         return False
 
 
-def _build_variable_values(contact: Contact, user_name: str) -> dict:
+def _build_variable_values(
+    contact: Contact,
+    user_name: str,
+    occasion: str = "",
+    gift_summary: str = "",
+    gift_status: str = "",
+) -> dict:
     """
-    Build per-call variable values that are injected into the assistant's system prompt
+    Build per-call variable values injected into the assistant's system prompt
     via Vapi's {{variable}} template substitution.
 
-    The assistant's base prompt uses these placeholders:
-      {{user_name}}, {{contact_id}}, {{contact_name}}, {{contact_tags}}, {{last_call_note}}
+    Placeholders: {{user_name}}, {{contact_id}}, {{contact_name}}, {{contact_tags}},
+                  {{last_call_note}}, {{occasion_context}}, {{tone_instructions}}, {{gift_status}}
     """
+    occasion_context = ""
+    if occasion == "birthday":
+        gift_line = f" {user_name} also arranged a gift for you: {gift_summary}." if gift_summary else ""
+        occasion_context = (
+            f"⚠️ BIRTHDAY CALL: Today is {contact.name}'s birthday! "
+            "In Step 2, skip the standard opening and lead directly with warm birthday wishes: "
+            f"'Happy Birthday {contact.name}! I'm calling on behalf of {user_name} to wish you a wonderful day!'"
+            f"{gift_line} Then proceed with Step 3 (memory) and Step 4 (meeting ask) as usual."
+        )
+    elif occasion == "anniversary":
+        gift_line = f" {user_name} also sent a little something: {gift_summary}." if gift_summary else ""
+        occasion_context = (
+            f"⚠️ ANNIVERSARY CALL: Today is {contact.name}'s anniversary! "
+            "In Step 2, open with warm anniversary wishes: "
+            f"'Happy Anniversary {contact.name}! Calling on behalf of {user_name} to celebrate with you!'"
+            f"{gift_line} Then continue with Step 3 and Step 4 as usual."
+        )
+    elif occasion == "deal_congratulations":
+        gift_line = f" {user_name} also arranged a bouquet to be sent your way: {gift_summary}." if gift_summary else ""
+        occasion_context = (
+            f"⚠️ DEAL CONGRATULATIONS CALL: {contact.name} recently secured a major deal or funding! "
+            "In Step 2, open with warm congratulations: "
+            f"'Congratulations {contact.name}! We just heard the incredible news — absolutely thrilled for you and your team!'"
+            f"{gift_line} Then continue with Step 3 and Step 4."
+        )
+    elif occasion == "promotion_congratulations":
+        gift_line = f" {user_name} also sent you a little something to celebrate: {gift_summary}." if gift_summary else ""
+        occasion_context = (
+            f"⚠️ PROMOTION CONGRATULATIONS CALL: {contact.name} was recently promoted to a new role! "
+            "In Step 2, open with warm congratulations: "
+            f"'Congratulations on the promotion, {contact.name}! Well deserved — calling on behalf of {user_name} to celebrate with you!'"
+            f"{gift_line} Then continue with Step 3 and Step 4."
+        )
+    elif occasion == "crm_deal":
+        gift_line = f" {user_name} also arranged a small token of appreciation: {gift_summary}." if gift_summary else ""
+        occasion_context = (
+            f"⚠️ CRM DEAL CLOSURE CALL: {contact.name} just closed a deal with us! "
+            "In Step 2, open by expressing genuine gratitude: "
+            f"'Thank you so much, {contact.name}! We just saw the deal come through — {user_name} wanted to personally call and say how much we value your partnership!'"
+            f"{gift_line} Then continue with Step 3 and Step 4."
+        )
+    elif occasion:
+        # Festival or other occasion
+        occasion_display = occasion.replace("_", " ").title()
+        gift_line = f" {user_name} has also arranged a small gift: {gift_summary}." if gift_summary else ""
+        occasion_context = (
+            f"⚠️ FESTIVAL CALL ({occasion_display}): Wishing {contact.name} on {occasion_display}! "
+            f"In Step 2, open with warm festival greetings: 'Happy {occasion_display}, {contact.name}! "
+            f"Calling on behalf of {user_name} to wish you and your family a wonderful celebration!'"
+            f"{gift_line} Then continue with Step 3 and Step 4."
+        )
+
+    tone_instructions = (
+        "Use a casual, warm, friendly tone. Informal language is perfectly fine — speak like a friend."
+        if contact.relationship_type == "personal"
+        else
+        "Use a professional, respectful, and warm tone. Be concise and mindful of their time. "
+        "Maintain a business-friendly conversational style."
+    )
+
     return {
         "user_name": user_name,
         "contact_id": contact.contact_id,
         "contact_name": contact.name,
         "contact_tags": ", ".join(contact.tags) if contact.tags else "none",
         "last_call_note": contact.last_call_note or "No previous calls recorded.",
+        "occasion_context": occasion_context,
+        "tone_instructions": tone_instructions,
+        "gift_status": gift_status,
     }
 
 
@@ -121,7 +190,7 @@ async def ensure_assistant_server_url(api_key: str, assistant_id: str, app_base:
         logger.error("Failed to patch Vapi assistant serverUrl: %s", exc)
 
 
-async def initiate_call(contact: Contact) -> VapiCallResponse:
+async def initiate_call(contact: Contact, *, occasion: str = "", gift_summary: str = "") -> VapiCallResponse:
     """
     Calls POST /call on the Vapi API.
     Routes to phone (PSTN) or SIP based on contact.contact_method.
@@ -147,8 +216,14 @@ async def initiate_call(contact: Contact) -> VapiCallResponse:
         await _set_no_answer(contact)
         return None  # type: ignore[return-value]
 
+    # Fetch gift delivery status for this contact
+    from app.services.gifting import get_gift_delivery_context
+    gift_status = await get_gift_delivery_context(contact.contact_id)
+
     # Per-call variable values injected into the assistant's {{variable}} placeholders
-    variable_values = _build_variable_values(contact, settings.USER_NAME)
+    variable_values = _build_variable_values(
+        contact, settings.USER_NAME, occasion=occasion, gift_summary=gift_summary, gift_status=gift_status
+    )
 
     assistant_overrides = {
         "variableValues": variable_values,

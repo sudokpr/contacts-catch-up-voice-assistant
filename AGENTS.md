@@ -1,4 +1,4 @@
-# AGENTS.md — Contacts Catch-Up Voice Assistant
+# AGENTS.md — RelayAI Relationship Manager
 
 This file provides context for coding assistants working in this repository. Read it before making any changes.
 
@@ -6,9 +6,19 @@ This file provides context for coding assistants working in this repository. Rea
 
 ## What This Project Is
 
-A locally-hosted Python/FastAPI application that places proactive outbound voice calls to a curated list of contacts to keep relationships warm. A deterministic scoring engine decides who to call; Vapi handles the voice call with an AI assistant that has access to semantic memory (Qdrant). After each call, highlights and summaries are stored back into memory. A modern single-page dashboard handles contact management and live call monitoring.
+A locally-hosted Python/FastAPI application that acts as an **autonomous AI relationship manager** for both personal contacts and business partners. It places proactive outbound voice calls on your behalf — for regular catch-ups, birthdays, anniversaries, festival occasions, deal celebrations, promotion congratulations, and promised follow-ups.
 
-This is a **hackathon POC** — optimise for working demo over production robustness. Mocked external services (social feeds, calendar) are intentional and correct.
+Key pillars:
+- **Scoring engine** — daily cron ranks contacts by overdue-ness and calls the top ones
+- **Occasion detection** — birthday/anniversary (from contact fields), festivals (hardcoded MM-DD dict)
+- **News monitoring** — LinkedIn/social fixture adapters flag deal-news and promotions → trigger calls
+- **CRM integration** — mock CRM adapter (fixture-based) detects deal closures with contacts → call + gift
+- **Gifting service** — mock orders for flowers, custom mugs, and sweet boxes; delivery status injected into calls
+- **Commitment tracking** — call summaries scanned for phrases like "next quarter" → auto-schedule follow-up
+- **Tone adaptation** — `relationship_type` field drives `tone_instructions` variableValue (casual vs professional)
+- **Vapi** — single assistant with dynamic `{{variable}}` injection for all per-call context
+
+This is a **hackathon POC** — optimise for working demo over production robustness. Mocked external services (social feeds, CRM, gifting, calendar) are intentional and correct.
 
 ---
 
@@ -41,13 +51,15 @@ app/
     dashboard.py         # Serves app/static/index.html for all SPA routes
   services/
     scoring.py           # Deterministic scoring engine
-    vapi.py              # Outbound call initiation (phone + SIP); active call guard
+    vapi.py              # Outbound call initiation (phone + SIP); active call guard; variable injection
     qdrant.py            # Memory store; ensure_collection_exists on startup
     embedding.py         # Text embeddings with SHA-256 deterministic fallback
     calendar.py          # Google Calendar or mock
+    gifting.py           # Mock gifting service (flowers, mug, sweet_box); gift delivery context
+    crm.py               # Mock CRM adapter — fixture-based deal closure detection
     social/
       base.py            # SocialAdapterBase ABC + SocialUpdate model
-      fixtures.py        # Fixture data keyed by contact name — no real API calls
+      fixtures.py        # Fixture data keyed by contact name; DEAL_KEYWORDS, PROMOTION_KEYWORDS
       twitter.py / instagram.py / linkedin.py / ingest.py
   workers/
     scheduler.py         # APScheduler: daily cron, 5-min poller, crash recovery
@@ -100,7 +112,17 @@ tests/
 
 **Memory retrieval is sorted by recency.** `get_memory` and `search_memory` tool endpoints sort Qdrant results by `timestamp` descending before returning, so the AI always sees the most recent memories first regardless of semantic similarity score.
 
-**Vapi variable injection.** Per-call context (`user_name`, `contact_id`, `contact_name`, `contact_tags`, `last_call_note`) is passed via `assistantOverrides.variableValues` in the Vapi call payload. These substitute `{{variable}}` placeholders in the assistant's system prompt. They are NOT persisted on the assistant.
+**Vapi variable injection.** Per-call context is passed via `assistantOverrides.variableValues`. Variables: `user_name`, `contact_id`, `contact_name`, `contact_tags`, `last_call_note`, `occasion_context`, `tone_instructions`, `gift_status`. These substitute `{{variable}}` placeholders in the system prompt. They are NOT persisted on the assistant.
+
+**`relationship_type` drives tone.** `contact.relationship_type` ("personal" | "business") determines `tone_instructions` in `_build_variable_values()`. The single Vapi assistant adapts tone without needing two separate assistants.
+
+**Gift delivery context.** `get_gift_delivery_context(contact_id)` queries `gift_orders` for the most recent gift, compares `delivery_date` to today, and returns a natural-language string ("a bouquet is on its way" / "hope you enjoyed the gift") injected as `{{gift_status}}`.
+
+**Occasion-triggered jobs in scheduler.** `_birthday_anniversary_job()` → birthday/anniversary. `_festival_job()` → hardcoded `_FESTIVALS` dict (MM-DD). `_deal_news_job(contacts)` → scans today's ingested social memories for `DEAL_KEYWORDS`/`PROMOTION_KEYWORDS`. `_crm_deal_job()` → queries mock CRM adapter. All run from `_daily_cron_job()` after the regular scoring calls.
+
+**Commitment detection in webhook.** `process_call_webhook()` scans the call summary for commitment phrases ("next quarter", "next month", etc.). If found, stores a `"commitment"` memory entry and calls `schedule_one_off_call()` to set `next_call_at` the appropriate number of days out.
+
+**Mock CRM adapter pattern.** `app/services/crm.py` follows the same fixture-based pattern as social adapters — `DEAL_FIXTURES` dict keyed by lowercase contact name, `get_closed_deal_today()` function. Swap for real Salesforce/HubSpot API calls in production.
 
 **Vapi summary.** `analysisPlan.summaryPlan` is enabled on the assistant — Vapi's GPT-4 generates the call summary. Our webhook reads it from `payload.analysis.summary`. No local LLM is needed for summarisation.
 

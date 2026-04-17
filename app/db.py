@@ -43,6 +43,29 @@ async def init_db() -> None:
                 processed_at TEXT
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS gift_orders (
+                order_id      TEXT PRIMARY KEY,
+                contact_id    TEXT NOT NULL,
+                occasion      TEXT NOT NULL,
+                gift_type     TEXT NOT NULL,
+                vendor        TEXT,
+                description   TEXT,
+                tracking      TEXT,
+                delivery_date TEXT,
+                ordered_at    TEXT NOT NULL
+            )
+        """)
+        # Add new columns to existing contacts table (safe to run on old DBs)
+        for col, typedef in [
+            ("birthday", "TEXT"),
+            ("anniversary", "TEXT"),
+            ("relationship_type", "TEXT DEFAULT 'personal'"),
+        ]:
+            try:
+                await db.execute(f"ALTER TABLE contacts ADD COLUMN {col} {typedef}")
+            except Exception:
+                pass  # column already exists
         await db.commit()
 
 
@@ -106,6 +129,9 @@ def contact_to_row(contact: Contact) -> dict[str, Any]:
         "last_call_note": contact.last_call_note,
         "call_started_at": contact.call_started_at.isoformat() if contact.call_started_at else None,
         "social_handles": serialize_social_handles(contact.social_handles),
+        "birthday": contact.birthday,
+        "anniversary": contact.anniversary,
+        "relationship_type": contact.relationship_type,
     }
 
 
