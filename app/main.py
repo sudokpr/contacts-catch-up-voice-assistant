@@ -1,6 +1,27 @@
+import logging
+import logging.config
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+
+# Configure logging before any loggers are created.
+# uvicorn's --log-level only affects uvicorn's own loggers; this covers app loggers.
+logging.config.dictConfig({
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "default": {"format": "%(asctime)s %(levelname)-8s %(name)s: %(message)s"},
+    },
+    "handlers": {
+        "console": {"class": "logging.StreamHandler", "formatter": "default"},
+    },
+    "root": {"level": "INFO", "handlers": ["console"]},
+    "loggers": {
+        "app": {"level": "INFO", "propagate": True},
+        "uvicorn": {"level": "INFO", "propagate": False, "handlers": ["console"]},
+        "uvicorn.access": {"level": "INFO", "propagate": False, "handlers": ["console"]},
+    },
+})
 
 
 @asynccontextmanager

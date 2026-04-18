@@ -393,3 +393,48 @@ scripts/
 tests/
   unit/               # Unit tests (35 passing)
 ```
+
+---
+
+## Sample walkthrough — business relationship management
+
+Here's a full day in the life of the system managing **Arjun Mehta**, a SaaS founder and business partner.
+
+**Morning — LinkedIn monitor fires:**
+> System detects Arjun's LinkedIn post: *"Excited to share — we just secured ₹5 crore in seed funding!"*
+> Scheduler orders a bouquet via mock gifting API.
+> Vapi places an outbound WebRTC call.
+> AI: *"Arjun, this is an AI calling on behalf of Kirthi — huge congratulations on the funding round! That's a major milestone. Kirthi also wanted to send something — a bouquet is on its way to you. How does it feel to have that runway secured?"*
+> Call ends. Highlights stored in Qdrant. Contact updated.
+
+**Birthday detected (Arjun's birthday = today):**
+> System orders flowers + mug. Places birthday call.
+> AI: *"Happy Birthday Arjun! Kirthi wanted to make sure he didn't let the day pass without reaching out. Hope you're celebrating — enjoy the day!"*
+> No meeting ask (birthday calls skip the scheduling step).
+
+**CRM deal closure detected:**
+> Mock CRM signals that Arjun's deal *"RelayAI Pro Annual License — ₹2.4L"* closed today.
+> Places CRM deal call.
+> AI: *"Arjun! We just saw the annual license come through — that's fantastic. Kirthi wanted to personally thank you for the trust you've placed in the product. Looking forward to delivering real value for your team."*
+
+**Festival (Diwali):**
+> On Oct 20, system sends sweet box to all contacts tagged `send-gift`.
+> AI: *"Happy Diwali, Arjun! Kirthi sends his warmest wishes to you and your family. He's also sent a sweet box your way — hope it arrives before the celebrations!"*
+
+**Follow-up commitment honored:**
+> Previous call summary contained: *"let's reconnect next quarter"*
+> System auto-scheduled a follow-up 60 days out.
+> Follow-up fires automatically with full memory context from last call.
+
+**Tone:**
+> Because Arjun is tagged `relationship_type=business`, all calls use a professional, concise tone — no casual slang, mindful of his time.
+
+---
+
+## Roadmap
+
+- Real LinkedIn API integration (currently fixture-based)
+- Real Salesforce/HubSpot CRM adapter (currently fixture-based)
+- Real gifting vendor API (Ferns & Petals, Amazon Business)
+- Multi-user support with per-user assistant provisioning
+- Mobile app for managing contacts on the go

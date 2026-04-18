@@ -672,6 +672,18 @@ async function _startWebCall(contactId) {
     renderList(contacts.filter(() => true));
   });
 
+  // Live transcript from Vapi SDK — show each turn as it finalises
+  vapi.on('message', (msg) => {
+    if (!msg) return;
+    if (msg.type === 'transcript' && msg.transcriptType === 'final') {
+      const speaker = msg.role === 'assistant' ? '🤖' : '🧑';
+      appendCallEvent(`${speaker} ${msg.transcript}`);
+    }
+    if (msg.type === 'function-call') {
+      appendCallEvent(`🔧 Tool: ${msg.functionCall?.name || 'unknown'}`);
+    }
+  });
+
   // Pre-fetch memories so the assistant has them in context from word one
   let recentMemories = '';
   try {
@@ -742,16 +754,39 @@ async function triggerOccasionCall(contactId, occasion) {
     crm_deal: '💼 CRM Deal Closure',
   };
   const label = labels[occasion] || occasion;
+
+  if (!vapi) {
+    updateCallUI('error', 'Vapi SDK not loaded — cannot start WebRTC call');
+    return;
+  }
+  if (vapiInstance) {
+    updateCallUI('error', 'A call is already in progress');
+    return;
+  }
+
   updateCallUI('connecting', null);
   const btn = document.getElementById('call-btn');
   if (btn) btn.disabled = true;
+
   try {
-    await _startBackendCall(contactId, occasion);
-    updateCallUI('connecting', `Demo: ${label}`);
+    // Fetch pre-computed variableValues for this occasion (includes occasion_context,
+    // tone_instructions, meeting_ask_section, gift_status, recent_memories)
+    const { variable_values, assistant_id } = await fetch(
+      `/api/calls/occasion-variables/${contactId}?occasion=${encodeURIComponent(occasion)}`
+    ).then(r => r.json());
+
+    activeCallId = contactId;
+    startCallTimer();
+    subscribeCallSSE(contactId);
+
+    const call = await vapi.start(assistant_id, { variableValues: variable_values });
+    _registerCallId(call);
+    appendCallEvent(`Demo call started: ${label}`);
   } catch (err) {
-    updateCallUI('error', err.message);
-    updateCallUI('idle', null);
-    if (btn) btn.disabled = false;
+    stopCallTimer();
+    activeCallId = null;
+    updateCallUI('error', err.message || 'Failed to start occasion call');
+    if (btn) { btn.disabled = false; btn.innerHTML = callBtnHTML(); }
   }
 }
 
@@ -861,10 +896,12 @@ function subscribeCallSSE(contactId) {
       const reason = event.ended_reason;
       if (!reason) {
         updateCallUI('in-progress', null);
-        appendCallEvent('Call status update received');
       } else {
-        appendCallEvent(`Status: ${reason}`);
+        appendCallEvent(`📶 ${reason}`);
       }
+    } else if (event.type === 'transcript-update') {
+      const speaker = event.role === 'assistant' ? '🤖' : '🧑';
+      if (event.transcript) appendCallEvent(`${speaker} ${event.transcript}`);
     } else if (event.type === 'call-ended') {
       clearTimeout(watchdog);
       updateCallUI('ended', event);

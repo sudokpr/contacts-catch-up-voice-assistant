@@ -199,6 +199,49 @@ async def web_register_call(body: dict[str, Any]):
     return {"status": "registered"}
 
 
+@router.get("/occasion-variables/{contact_id}", summary="Return pre-computed variableValues for a demo occasion call via WebRTC")
+async def get_occasion_variables(contact_id: str, occasion: str = ""):
+    """
+    Returns the full variableValues dict for vapi.start() — including occasion_context,
+    meeting_ask_section, tone_instructions, gift_status, and recent_memories.
+    Used by the demo trigger buttons so they go through WebRTC instead of PSTN/SIP.
+    """
+    from app.services.vapi import _build_variable_values, FESTIVAL_OCCASIONS
+    from app.services.gifting import choose_gifts_for_occasion, order_gift, get_gift_delivery_context
+    from app.config import get_settings
+
+    contact = await _get_contact(contact_id)
+    settings = get_settings()
+
+    gift_summary = ""
+    if occasion and "send-gift" in (contact.tags or []):
+        gift_types = choose_gifts_for_occasion(occasion)
+        order = await order_gift(contact.contact_id, contact.name, occasion, gift_types)
+        if order:
+            gift_summary = order.get("summary", "")
+
+    gift_status = await get_gift_delivery_context(contact.contact_id)
+
+    recent_memories = ""
+    try:
+        from app.services.qdrant import search_memory
+        tags_joined = " ".join(contact.tags) if contact.tags else ""
+        query = f"{contact.name} {tags_joined} {contact.last_call_note or ''}".strip()
+        entries = await search_memory(contact.contact_id, query, top_k=8)
+        entries.sort(key=lambda e: e.timestamp, reverse=True)
+        if entries:
+            recent_memories = "\n".join(f"- [{e.type}] {e.text}" for e in entries)
+    except Exception as exc:
+        logger.warning("Could not pre-fetch memories for occasion vars: %s", exc)
+
+    variable_values = _build_variable_values(
+        contact, settings.USER_NAME,
+        occasion=occasion, gift_summary=gift_summary,
+        gift_status=gift_status, recent_memories=recent_memories,
+    )
+    return {"variable_values": variable_values, "assistant_id": settings.VAPI_ASSISTANT_ID}
+
+
 @router.get("/active", summary="Return currently active call contact IDs")
 async def active_calls():
     from app.services.vapi import _active_calls
