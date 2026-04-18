@@ -354,8 +354,9 @@ async function selectContact(id) {
   panel.innerHTML = renderDetailSkeleton(contact);
   updateCallViaText(contact);
 
-  // Load memories in background
+  // Load memories and gift orders in background
   loadMemories(id);
+  loadGiftOrders(id);
 }
 
 function fmt(iso) {
@@ -511,6 +512,16 @@ function renderDetailSkeleton(c) {
       </div>
     </div>
 
+    <!-- Gift Orders -->
+    <div class="bg-slate-900 rounded-xl border border-slate-800">
+      <div class="px-4 py-3 border-b border-slate-800">
+        <h2 class="text-sm font-semibold">Gift Orders</h2>
+      </div>
+      <div id="gifts-list" class="p-4 space-y-2">
+        <p class="text-xs text-slate-600 text-center py-3">Loading gift orders…</p>
+      </div>
+    </div>
+
     <!-- Memories -->
     <div class="bg-slate-900 rounded-xl border border-slate-800">
       <div class="px-4 py-3 border-b border-slate-800">
@@ -546,6 +557,43 @@ async function loadMemories(contactId) {
       </div>
     `).join('');
   } catch {}
+}
+
+async function loadGiftOrders(contactId) {
+  const el = document.getElementById('gifts-list');
+  if (!el) return;
+  try {
+    const orders = await api('GET', `/api/contacts/${contactId}/gifts`);
+    if (!orders.length) {
+      el.innerHTML = `<p class="text-xs text-slate-600 text-center py-3">No gift orders yet</p>`;
+      return;
+    }
+    const giftIcon = { flowers: '💐', mug: '☕', sweet_box: '🍬' };
+    el.innerHTML = orders.map(o => `
+      <div class="flex items-start gap-3 py-2 border-b border-slate-800 last:border-0">
+        <span class="text-lg mt-0.5">${giftIcon[o.gift_type] || '🎁'}</span>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm text-slate-200 truncate">${o.description}</p>
+          <p class="text-xs text-slate-500">${o.vendor} · ${o.occasion} · ETA ${o.delivery_date || '—'}</p>
+          <p class="text-xs text-slate-600">Tracking: ${o.tracking}</p>
+        </div>
+        <button
+          onclick="toggleGiftDelivered('${contactId}', '${o.order_id}', ${!o.delivered})"
+          class="shrink-0 text-xs px-2 py-1 rounded transition-colors ${o.delivered
+            ? 'bg-emerald-900 text-emerald-300 hover:bg-emerald-800'
+            : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}"
+          title="${o.delivered ? 'Mark as pending' : 'Mark as delivered'}"
+        >${o.delivered ? '✓ Delivered' : 'Pending'}</button>
+      </div>
+    `).join('');
+  } catch {
+    el.innerHTML = `<p class="text-xs text-slate-600 text-center py-3">Could not load gift orders</p>`;
+  }
+}
+
+async function toggleGiftDelivered(contactId, orderId, delivered) {
+  await api('PATCH', `/api/contacts/${contactId}/gifts/${orderId}`, { delivered });
+  loadGiftOrders(contactId);
 }
 
 // ─── Live call ────────────────────────────────────────────────────────────────
@@ -612,27 +660,22 @@ function endWebCall() {
   }
 }
 
-async function _startWebCall(contactId) {
-  const contact = contacts.find(c => c.contact_id === contactId);
-  if (!contact) throw new Error('Contact not found');
-
-  // Tear down any existing Vapi instance
+// Creates a Vapi SDK instance wired up with standard event handlers.
+// Returns { vapi, registerCallId } — caller is responsible for calling vapi.start().
+function _createVapiInstance(contactId) {
   if (vapiInstance) { try { vapiInstance.end(); } catch {} vapiInstance = null; }
 
   const vapi = new window.VapiClass(vapiConfig.vapi_public_key);
   vapiInstance = vapi;
 
-  function _registerCallId(data) {
+  function registerCallId(data) {
     const callId = (typeof data === 'string' ? data : data?.id || data?.call?.id);
     if (callId) {
       api('POST', '/api/calls/web-register', { call_id: callId, contact_id: contactId }).catch(() => {});
     }
   }
 
-  // call-start-success carries the call object with ID — most reliable registration point
-  vapi.on('call-start-success', (data) => {
-    _registerCallId(data);
-  });
+  vapi.on('call-start-success', (data) => { registerCallId(data); });
 
   vapi.on('call-start', () => {
     activeCallId = contactId;
@@ -641,7 +684,6 @@ async function _startWebCall(contactId) {
     renderList(contacts.filter(() => true));
   });
 
-  // call-start-failed: startup errors (mic denied, network, etc.)
   vapi.on('call-start-failed', (data) => {
     stopCallTimer();
     activeCallId = null;
@@ -657,7 +699,6 @@ async function _startWebCall(contactId) {
     activeCallId = null;
     vapiInstance = null;
     updateCallUI('ended', { outcome: 'answered' });
-    // Reload contact data after webhook has time to process (needs APP_BASE/ngrok)
     setTimeout(() => reloadContact(contactId), 4000);
   });
 
@@ -672,7 +713,6 @@ async function _startWebCall(contactId) {
     renderList(contacts.filter(() => true));
   });
 
-  // Live transcript from Vapi SDK — show each turn as it finalises
   vapi.on('message', (msg) => {
     if (!msg) return;
     if (msg.type === 'transcript' && msg.transcriptType === 'final') {
@@ -683,6 +723,15 @@ async function _startWebCall(contactId) {
       appendCallEvent(`🔧 Tool: ${msg.functionCall?.name || 'unknown'}`);
     }
   });
+
+  return { vapi, registerCallId };
+}
+
+async function _startWebCall(contactId) {
+  const contact = contacts.find(c => c.contact_id === contactId);
+  if (!contact) throw new Error('Contact not found');
+
+  const { vapi, registerCallId } = _createVapiInstance(contactId);
 
   // Pre-fetch memories so the assistant has them in context from word one
   let recentMemories = '';
@@ -713,7 +762,7 @@ async function _startWebCall(contactId) {
 
   // Fallback registration from start() return value (call-start-success is preferred)
   console.debug('[Vapi] start() resolved:', call);
-  _registerCallId(call);
+  registerCallId(call);
 }
 
 async function _startBackendCall(contactId, occasion = '') {
@@ -755,7 +804,7 @@ async function triggerOccasionCall(contactId, occasion) {
   };
   const label = labels[occasion] || occasion;
 
-  if (!vapi) {
+  if (!window.VapiClass) {
     updateCallUI('error', 'Vapi SDK not loaded — cannot start WebRTC call');
     return;
   }
@@ -775,16 +824,16 @@ async function triggerOccasionCall(contactId, occasion) {
       `/api/calls/occasion-variables/${contactId}?occasion=${encodeURIComponent(occasion)}`
     ).then(r => r.json());
 
-    activeCallId = contactId;
-    startCallTimer();
     subscribeCallSSE(contactId);
+    const { vapi, registerCallId } = _createVapiInstance(contactId);
 
     const call = await vapi.start(assistant_id, { variableValues: variable_values });
-    _registerCallId(call);
+    registerCallId(call);
     appendCallEvent(`Demo call started: ${label}`);
   } catch (err) {
     stopCallTimer();
     activeCallId = null;
+    vapiInstance = null;
     updateCallUI('error', err.message || 'Failed to start occasion call');
     if (btn) { btn.disabled = false; btn.innerHTML = callBtnHTML(); }
   }

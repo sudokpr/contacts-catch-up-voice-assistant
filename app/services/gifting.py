@@ -134,9 +134,10 @@ def choose_gifts_for_occasion(occasion: str) -> list[str]:
 
 async def get_gift_delivery_context(contact_id: str) -> str:
     """
-    Check the most recent gift order for this contact.
-    Returns a natural-language status string for the AI to use during the call,
-    or "" if no recent gift was ordered.
+    Check the most recent gift order for this contact and return a natural-language
+    status string for the AI to use during the call, or "" if no recent gift was ordered.
+
+    Uses the `delivered` flag (set manually via UI) rather than date estimation.
     """
     from app.db import get_db
 
@@ -144,7 +145,9 @@ async def get_gift_delivery_context(contact_id: str) -> str:
         db = await get_db()
         try:
             async with db.execute(
-                "SELECT description, delivery_date FROM gift_orders WHERE contact_id = ? ORDER BY ordered_at DESC LIMIT 1",
+                """SELECT description, delivery_date, delivered
+                   FROM gift_orders WHERE contact_id = ?
+                   ORDER BY ordered_at DESC LIMIT 1""",
                 (contact_id,),
             ) as cursor:
                 row = await cursor.fetchone()
@@ -154,20 +157,18 @@ async def get_gift_delivery_context(contact_id: str) -> str:
         if not row:
             return ""
 
-        description, delivery_date_str = row["description"], row["delivery_date"]
-        if not delivery_date_str:
+        description = row["description"] or ""
+        delivery_date_str = row["delivery_date"] or ""
+        delivered = bool(row["delivered"])
+
+        if not description:
             return ""
 
-        # delivery_date is stored as "Month DD" (e.g. "April 18")
-        try:
-            today = datetime.now(UTC)
-            delivery_dt = datetime.strptime(f"{delivery_date_str} {today.year}", "%B %d %Y")
-            if delivery_dt.date() >= today.date():
-                return f"A gift is on its way — {description} — arriving by {delivery_date_str}!"
-            else:
-                return f"We recently sent you {description} — hope you enjoyed it!"
-        except ValueError:
-            return ""
+        if delivered:
+            return f"We recently sent you {description} — hope you enjoyed it!"
+        else:
+            eta = f" — arriving by {delivery_date_str}" if delivery_date_str else ""
+            return f"A gift is on its way{eta}: {description}."
 
     except Exception as exc:
         logger.error("get_gift_delivery_context error for contact %s: %s", contact_id, exc)

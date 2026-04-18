@@ -150,6 +150,47 @@ async def get_memory_context(contact_id: str):
         return {"recent_memories": ""}
 
 
+@router.get("/{contact_id}/gifts")
+async def list_gift_orders(contact_id: str):
+    """Return all gift orders for a contact, newest first."""
+    db = await get_db()
+    try:
+        async with db.execute(
+            """SELECT order_id, occasion, gift_type, vendor, description,
+                      tracking, delivery_date, ordered_at, delivered
+               FROM gift_orders WHERE contact_id = ?
+               ORDER BY ordered_at DESC""",
+            (contact_id,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        await db.close()
+
+
+@router.patch("/{contact_id}/gifts/{order_id}")
+async def update_gift_order(contact_id: str, order_id: str, body: dict):
+    """Toggle or update a gift order. Accepts { delivered: true|false }."""
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT order_id FROM gift_orders WHERE order_id = ? AND contact_id = ?",
+            (order_id, contact_id),
+        )
+        if not await cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Gift order not found")
+
+        delivered = int(bool(body.get("delivered", False)))
+        await db.execute(
+            "UPDATE gift_orders SET delivered = ? WHERE order_id = ?",
+            (delivered, order_id),
+        )
+        await db.commit()
+        return {"status": "updated", "delivered": bool(delivered)}
+    finally:
+        await db.close()
+
+
 @router.delete("/{contact_id}", status_code=204)
 async def delete_contact(contact_id: str):
     """Delete a contact and all associated memory entries."""

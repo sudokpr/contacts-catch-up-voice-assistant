@@ -66,6 +66,11 @@ async def init_db() -> None:
                 await db.execute(f"ALTER TABLE contacts ADD COLUMN {col} {typedef}")
             except Exception:
                 pass  # column already exists
+        # Add delivered column to gift_orders (safe to run on old DBs)
+        try:
+            await db.execute("ALTER TABLE gift_orders ADD COLUMN delivered INTEGER NOT NULL DEFAULT 0")
+        except Exception:
+            pass  # column already exists
         await db.commit()
 
 
