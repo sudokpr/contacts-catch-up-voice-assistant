@@ -150,6 +150,13 @@ async def get_memory_context(contact_id: str):
         return {"recent_memories": ""}
 
 
+@router.delete("/{contact_id}/memories/{entry_id}", status_code=204)
+async def delete_memory(contact_id: str, entry_id: str):
+    """Delete a single memory entry by its Qdrant point ID."""
+    from app.services.qdrant import delete_memory as qdrant_delete_memory
+    await qdrant_delete_memory(entry_id)
+
+
 @router.get("/{contact_id}/gifts")
 async def list_gift_orders(contact_id: str):
     """Return all gift orders for a contact, newest first."""
@@ -164,6 +171,17 @@ async def list_gift_orders(contact_id: str):
         ) as cursor:
             rows = await cursor.fetchall()
         return [dict(r) for r in rows]
+    finally:
+        await db.close()
+
+
+@router.delete("/{contact_id}/gifts", status_code=204)
+async def clear_gift_orders(contact_id: str):
+    """Delete all gift orders for a contact."""
+    db = await get_db()
+    try:
+        await db.execute("DELETE FROM gift_orders WHERE contact_id = ?", (contact_id,))
+        await db.commit()
     finally:
         await db.close()
 

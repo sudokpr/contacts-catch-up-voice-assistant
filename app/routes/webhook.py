@@ -254,17 +254,6 @@ async def classify_outcome(ended_reason: Optional[str]) -> str:
 # Background task
 # ---------------------------------------------------------------------------
 
-def _extract_contact_turns(artifact: Optional[dict]) -> list[str]:
-    if not artifact:
-        return []
-    messages = artifact.get("messages") or []
-    turns = []
-    for msg in messages:
-        if msg.get("role") == "user" and msg.get("message", "").strip():
-            text = msg["message"].strip()
-            if len(text) > 10:
-                turns.append(text)
-    return turns
 
 
 async def process_call_webhook(payload: VapiWebhookPayload) -> None:
@@ -307,14 +296,6 @@ async def process_call_webhook(payload: VapiWebhookPayload) -> None:
             logger.info("process_call_webhook: no Vapi summary, using transcript snippet")
 
         if contact_id:
-            highlights = _extract_contact_turns(payload.artifact)
-            logger.info("process_call_webhook: storing %d highlights for contact %s", len(highlights), contact_id)
-            for text in highlights:
-                try:
-                    await store_memory(MemoryEntry(contact_id=contact_id, type="highlight", text=text))
-                except Exception as exc:
-                    logger.error("Failed to store highlight for contact %s: %s", contact_id, exc)
-
             if summary:
                 try:
                     await store_memory(MemoryEntry(contact_id=contact_id, type="summary", text=summary))

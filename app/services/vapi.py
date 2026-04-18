@@ -78,6 +78,8 @@ def _build_variable_values(
                   {{last_call_note}}, {{occasion_context}}, {{tone_instructions}},
                   {{gift_status}}, {{recent_memories}}
     """
+    _close_note = "After Step 2, skip straight to Step 4 — DO NOT ask for a meeting. Close warmly and end."
+
     occasion_context = ""
     if occasion == "birthday":
         gift_line = f" {user_name} also arranged a gift for you: {gift_summary}." if gift_summary else ""
@@ -85,7 +87,7 @@ def _build_variable_values(
             f"⚠️ BIRTHDAY CALL: Today is {contact.name}'s birthday! "
             "In Step 2, skip the standard opening and lead directly with warm birthday wishes: "
             f"'Happy Birthday {contact.name}! I'm calling on behalf of {user_name} to wish you a wonderful day!'"
-            f"{gift_line} Then proceed with Step 3 (memory) and Step 4 (meeting ask) as usual."
+            f"{gift_line} {_close_note}"
         )
     elif occasion == "anniversary":
         gift_line = f" {user_name} also sent a little something: {gift_summary}." if gift_summary else ""
@@ -93,7 +95,7 @@ def _build_variable_values(
             f"⚠️ ANNIVERSARY CALL: Today is {contact.name}'s anniversary! "
             "In Step 2, open with warm anniversary wishes: "
             f"'Happy Anniversary {contact.name}! Calling on behalf of {user_name} to celebrate with you!'"
-            f"{gift_line} Then continue with Step 3 and Step 4 as usual."
+            f"{gift_line} {_close_note}"
         )
     elif occasion == "deal_congratulations":
         gift_line = f" {user_name} also arranged a bouquet to be sent your way: {gift_summary}." if gift_summary else ""
@@ -101,7 +103,7 @@ def _build_variable_values(
             f"⚠️ DEAL CONGRATULATIONS CALL: {contact.name} recently secured a major deal or funding! "
             "In Step 2, open with warm congratulations: "
             f"'Congratulations {contact.name}! We just heard the incredible news — absolutely thrilled for you and your team!'"
-            f"{gift_line} Then continue with Step 3 and Step 4."
+            f"{gift_line} {_close_note}"
         )
     elif occasion == "promotion_congratulations":
         gift_line = f" {user_name} also sent you a little something to celebrate: {gift_summary}." if gift_summary else ""
@@ -109,7 +111,7 @@ def _build_variable_values(
             f"⚠️ PROMOTION CONGRATULATIONS CALL: {contact.name} was recently promoted to a new role! "
             "In Step 2, open with warm congratulations: "
             f"'Congratulations on the promotion, {contact.name}! Well deserved — calling on behalf of {user_name} to celebrate with you!'"
-            f"{gift_line} Then continue with Step 3 and Step 4."
+            f"{gift_line} {_close_note}"
         )
     elif occasion == "crm_deal":
         gift_line = f" {user_name} also arranged a small token of appreciation: {gift_summary}." if gift_summary else ""
@@ -117,7 +119,7 @@ def _build_variable_values(
             f"⚠️ CRM DEAL CLOSURE CALL: {contact.name} just closed a deal with us! "
             "In Step 2, open by expressing genuine gratitude: "
             f"'Thank you so much, {contact.name}! We just saw the deal come through — {user_name} wanted to personally call and say how much we value your partnership!'"
-            f"{gift_line} Then continue with Step 3 and Step 4."
+            f"{gift_line} {_close_note}"
         )
     elif occasion:
         # Festival or other occasion
@@ -127,7 +129,7 @@ def _build_variable_values(
             f"⚠️ FESTIVAL CALL ({occasion_display}): Wishing {contact.name} on {occasion_display}! "
             f"In Step 2, open with warm festival greetings: 'Happy {occasion_display}, {contact.name}! "
             f"Calling on behalf of {user_name} to wish you and your family a wonderful celebration!'"
-            f"{gift_line} Then continue with Step 3 and Step 4."
+            f"{gift_line} {_close_note}"
         )
 
     tone_instructions = (

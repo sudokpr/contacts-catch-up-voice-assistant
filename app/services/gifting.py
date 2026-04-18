@@ -93,15 +93,17 @@ async def order_gift(contact_id: str, contact_name: str, occasion: str, gift_typ
         try:
             db = await get_db()
             try:
+                # Randomly mark ~40% of mock orders as already delivered (demo realism)
+                delivered = 1 if random.random() < 0.4 else 0
                 await db.execute(
                     """INSERT INTO gift_orders
                        (order_id, contact_id, occasion, gift_type, vendor, description,
-                        tracking, delivery_date, ordered_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        tracking, delivery_date, ordered_at, delivered)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         str(uuid.uuid4()), contact_id, occasion, gift_type,
                         order["vendor"], order["description"],
-                        tracking, delivery_date, now.isoformat(),
+                        tracking, delivery_date, now.isoformat(), delivered,
                     ),
                 )
                 await db.commit()
