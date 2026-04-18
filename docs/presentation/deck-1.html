@@ -1,0 +1,227 @@
+<!doctype html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <title>AI Voice Relationship Manager</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js/dist/reveal.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js/dist/theme/black.css">
+
+  <style>
+    .reveal h1,
+    .reveal h2 {
+      text-transform: none;
+    }
+
+    .reveal p,
+    .reveal li {
+      font-size: 0.9em;
+    }
+
+    .highlight {
+      color: #00d4ff;
+    }
+
+    .two-col {
+      display: flex;
+      gap: 40px;
+    }
+
+    .two-col div {
+      flex: 1;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="reveal">
+    <div class="slides">
+
+      <!-- Slide 1 -->
+      <section>
+        <h1>AI Voice Relationship Manager</h1>
+        <p>Maintaining and strengthening business relationships at scale through intelligent voice interactions</p>
+      </section>
+
+      <!-- Slide 2 -->
+      <section>
+        <h2>Problem</h2>
+        <ul>
+          <li>Business relationships weaken without consistent touchpoints</li>
+          <li>Follow-ups are manual and often missed</li>
+          <li>CRMs track data but don’t build relationships</li>
+          <li>High-value partners receive low-frequency attention</li>
+        </ul>
+        <p><strong>Result:</strong> Lost goodwill, missed opportunities</p>
+      </section>
+
+      <!-- Slide 3 -->
+      <section>
+        <h2>Solution</h2>
+        <ul>
+          <li>Proactively reaches out to partners</li>
+          <li>Reacts to events, signals, and gaps</li>
+          <li>Converses naturally over voice</li>
+          <li>Remembers context across interactions</li>
+        </ul>
+        <p class="highlight">Feels human, not automated</p>
+      </section>
+
+      <!-- Slide 4 -->
+      <section>
+        <h2>Core Business Use Cases</h2>
+        <ul>
+          <li><strong>Festive outreach:</strong> Deepavali, New Year wishes</li>
+          <li><strong>Relationship nurturing:</strong> periodic check-ins</li>
+          <li><strong>Deal follow-ups:</strong> post-closure engagement</li>
+          <li><strong>Gap detection:</strong> reach out after inactivity</li>
+          <li><strong>Smart callbacks:</strong> “call me tomorrow evening”</li>
+        </ul>
+      </section>
+
+      <!-- Slide 5 -->
+      <section>
+        <h2>Example: Deepavali Outreach</h2>
+        <ul>
+          <li>Send sweets or gifts</li>
+          <li>Assistant follows up with a call</li>
+        </ul>
+        <p><em>
+            “Hi Rajesh, wishing you and your family a very happy Deepavali!
+            Hope you received the sweets.”
+          </em></p>
+        <p class="highlight">Builds goodwill at scale</p>
+      </section>
+
+      <!-- Slide 6 -->
+      <section>
+        <h2>What Makes This Different</h2>
+        <div class="two-col">
+          <div>
+            <h3>Traditional CRM</h3>
+            <ul>
+              <li>Tracks data</li>
+              <li>Sets reminders</li>
+              <li>Requires manual action</li>
+            </ul>
+          </div>
+          <div>
+            <h3>This System</h3>
+            <ul>
+              <li>Acts on your behalf</li>
+              <li>Initiates conversations</li>
+              <li>Uses memory for context</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- Slide 7 -->
+      <section>
+        <h2>System Architecture</h2>
+        <ul>
+          <li><strong>Memory (Qdrant):</strong> stores highlights, context, past interactions</li>
+          <li><strong>Trigger Engine:</strong> decides when to act</li>
+          <li><strong>Voice Layer (Vapi):</strong> handles natural conversations</li>
+          <li><strong>LLM Layer:</strong> extracts summaries, facts, callbacks</li>
+        </ul>
+      </section>
+
+      <!-- Slide 8 -->
+      <section>
+        <h2>Memory & Context</h2>
+        <ul>
+          <li>Stores key information from conversations</li>
+          <li>Uses semantic search to retrieve relevant context</li>
+        </ul>
+        <p><em>
+            “Last time we spoke about your expansion — how’s that going?”
+          </em></p>
+      </section>
+
+      <!-- Slide 9 -->
+      <section>
+        <h2>Trigger Engine</h2>
+        <ul>
+          <li><strong>Time-based:</strong> scheduled outreach</li>
+          <li><strong>Event-based:</strong> deal closed, milestone</li>
+          <li><strong>Inactivity:</strong> relationship gap detection</li>
+          <li><strong>Callbacks:</strong> “call me later”</li>
+        </ul>
+      </section>
+
+      <!-- Slide 10 -->
+      <section>
+        <h2>End-to-End Flow</h2>
+        <pre>
+Event / Signal
+      ↓
+Trigger Engine
+      ↓
+Voice Call
+      ↓
+Conversation + Context
+      ↓
+Memory Update
+      ↓
+Next interaction improves
+  </pre>
+      </section>
+
+      <!-- Slide 11 -->
+      <section>
+        <h2>Business Impact</h2>
+        <ul>
+          <li>Stronger partner relationships</li>
+          <li>Higher trust and recall</li>
+          <li>Consistent engagement without manual effort</li>
+          <li>Scalable personal attention</li>
+        </ul>
+      </section>
+
+      <!-- Slide 12 -->
+      <section>
+        <h2>MVP Plan</h2>
+        <ul>
+          <li>5–10 business contacts</li>
+          <li>Deepavali outreach campaign</li>
+          <li>Manual event triggers (deal closed)</li>
+          <li>Basic memory and callback handling</li>
+        </ul>
+      </section>
+
+      <!-- Slide 13 -->
+      <section>
+        <h2>Future Expansion</h2>
+        <ul>
+          <li>CRM integrations (HubSpot, Salesforce)</li>
+          <li>LinkedIn/social signal ingestion</li>
+          <li>WhatsApp fallback</li>
+          <li>Relationship scoring dashboard</li>
+        </ul>
+      </section>
+
+      <!-- Slide 14 -->
+      <section>
+        <h2>Closing</h2>
+        <p><strong>
+            Strong business relationships are built through consistent, thoughtful touchpoints — not just transactions.
+          </strong></p>
+      </section>
+
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/reveal.js/dist/reveal.js"></script>
+  <script>
+    Reveal.initialize({
+      hash: true,
+      transition: 'slide'
+    });
+  </script>
+
+</body>
+
+</html>
