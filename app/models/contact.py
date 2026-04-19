@@ -43,3 +43,6 @@ class Contact(BaseModel):
     last_call_note: Optional[str] = None
     call_started_at: Optional[datetime] = None  # set when call is initiated; cleared on webhook receipt
     social_handles: SocialHandles = Field(default_factory=SocialHandles)
+    birthday: Optional[str] = None    # YYYY-MM-DD
+    anniversary: Optional[str] = None  # YYYY-MM-DD
+    relationship_type: Literal["personal", "business"] = "personal"

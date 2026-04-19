@@ -4,6 +4,9 @@ Background scheduler using APScheduler.
 Jobs:
   - Daily cron (09:00 local): calls get_top_contacts, then initiate_call for each;
     also calls ingest_social_updates for each selected contact.
+  - Festival job (daily): checks for matching festivals today; orders sweet box + calls.
+  - Deal/promotion news job (daily): after social ingest, checks for deal/promotion keywords.
+  - CRM deal job (daily): checks mock CRM for deals closed today; calls to thank + gifts.
   - 5-minute polling: queries contacts where next_call_at <= now(), calls initiate_call;
     also calls sweep_stale_active_calls().
   - Crash recovery on startup: scans for contacts with next_call_at <= now() and re-queues.
@@ -47,6 +50,225 @@ def _run_async(coro) -> None:
     except RuntimeError:
         # No event loop in this thread — create one
         asyncio.run(coro)
+
+
+# MM-DD → occasion name for recurring festivals
+_FESTIVALS: dict[str, str] = {
+    "01-01": "new_year",
+    "03-17": "holi",
+    "04-13": "baisakhi",
+    "10-20": "diwali",
+    "12-25": "christmas",
+}
+
+_DEAL_KEYWORDS = ["million", "crore", "deal", "funding", "raised", "secured", "contract", "investment", "closed"]
+_PROMOTION_KEYWORDS = ["promoted", "promotion", "new role", "managing partner", "vp ", "director", "chief ", "head of"]
+
+
+async def _festival_job() -> None:
+    """
+    Daily: check for festivals matching today. For contacts with 'send-gift' tag:
+    order a sweet box and initiate a festival greeting call.
+    """
+    from app.db import get_db, row_to_contact
+    from app.services.vapi import initiate_call, AlreadyOnCallError
+    from app.services.gifting import order_gift, choose_gifts_for_occasion
+
+    today_md = datetime.now(UTC).strftime("%m-%d")
+    festival = _FESTIVALS.get(today_md)
+    if not festival:
+        return
+
+    logger.info("Festival job: %s detected for %s", festival, today_md)
+
+    try:
+        db = await get_db()
+        try:
+            async with db.execute("SELECT * FROM contacts") as cursor:
+                rows = await cursor.fetchall()
+            contacts = [row_to_contact(row) for row in rows]
+        finally:
+            await db.close()
+    except Exception as exc:
+        logger.error("Festival job: DB error: %s", exc)
+        return
+
+    for contact in contacts:
+        if "send-gift" not in (contact.tags or []):
+            continue
+
+        gift_summary = ""
+        try:
+            gift_types = choose_gifts_for_occasion(festival)
+            result = await order_gift(contact.contact_id, contact.name, festival, gift_types)
+            gift_summary = result.get("summary", "")
+            logger.info("Festival gift ordered for %s (%s): %s", contact.name, festival, gift_summary)
+        except Exception as exc:
+            logger.error("Festival gift failed for contact %s: %s", contact.contact_id, exc)
+
+        try:
+            await initiate_call(contact, occasion=festival, gift_summary=gift_summary)
+        except AlreadyOnCallError:
+            logger.warning("Festival job: contact %s already on a call", contact.contact_id)
+        except Exception as exc:
+            logger.error("Festival job: call failed for contact %s: %s", contact.contact_id, exc)
+
+
+async def _deal_news_job(contacts: list) -> None:
+    """
+    After social ingest: scan newly-stored social memories for deal or promotion keywords.
+    For business contacts only: initiate a congratulations call and send a bouquet.
+    """
+    from app.services.qdrant import search_memory
+    from app.services.vapi import initiate_call, AlreadyOnCallError
+    from app.services.gifting import order_gift
+
+    today_iso = datetime.now(UTC).date().isoformat()
+
+    for contact in contacts:
+        if contact.relationship_type != "business":
+            continue
+
+        try:
+            memories = await search_memory(contact.contact_id, contact.name, top_k=10)
+        except Exception as exc:
+            logger.error("Deal-news job: memory search failed for %s: %s", contact.contact_id, exc)
+            continue
+
+        occasion = None
+        for mem in memories:
+            if mem.timestamp.date().isoformat() < today_iso:
+                continue
+            text_lower = mem.text.lower()
+            if any(kw in text_lower for kw in _DEAL_KEYWORDS):
+                occasion = "deal_congratulations"
+                break
+            if any(kw in text_lower for kw in _PROMOTION_KEYWORDS):
+                occasion = "promotion_congratulations"
+                break
+
+        if not occasion:
+            continue
+
+        logger.info("Deal-news job: %s detected for contact %s (%s)", occasion, contact.contact_id, contact.name)
+
+        gift_summary = ""
+        try:
+            result = await order_gift(contact.contact_id, contact.name, occasion, ["flowers"])
+            gift_summary = result.get("summary", "")
+        except Exception as exc:
+            logger.error("Deal-news gift failed for contact %s: %s", contact.contact_id, exc)
+
+        try:
+            await initiate_call(contact, occasion=occasion, gift_summary=gift_summary)
+        except AlreadyOnCallError:
+            logger.warning("Deal-news job: contact %s already on a call", contact.contact_id)
+        except Exception as exc:
+            logger.error("Deal-news job: call failed for contact %s: %s", contact.contact_id, exc)
+
+
+async def _crm_deal_job() -> None:
+    """
+    Daily: check mock CRM for deals closed with us today. Call to thank the contact + send a gift.
+    """
+    from app.db import get_db, row_to_contact
+    from app.services.crm import get_closed_deal_today
+    from app.services.vapi import initiate_call, AlreadyOnCallError
+    from app.services.gifting import order_gift
+
+    logger.info("CRM deal job: checking for deals closed today")
+
+    try:
+        db = await get_db()
+        try:
+            async with db.execute("SELECT * FROM contacts") as cursor:
+                rows = await cursor.fetchall()
+            contacts = [row_to_contact(row) for row in rows]
+        finally:
+            await db.close()
+    except Exception as exc:
+        logger.error("CRM deal job: DB error: %s", exc)
+        return
+
+    for contact in contacts:
+        deal = get_closed_deal_today(contact.name)
+        if not deal:
+            continue
+
+        deal_desc = f"{deal.get('deal_name', 'your deal')} ({deal.get('amount', '')})"
+        logger.info("CRM deal job: deal '%s' closed with contact %s", deal_desc, contact.contact_id)
+
+        gift_summary = ""
+        try:
+            result = await order_gift(contact.contact_id, contact.name, "crm_deal", ["flowers"])
+            gift_summary = result.get("summary", "")
+        except Exception as exc:
+            logger.error("CRM deal gift failed for contact %s: %s", contact.contact_id, exc)
+
+        try:
+            await initiate_call(contact, occasion="crm_deal", gift_summary=gift_summary)
+        except AlreadyOnCallError:
+            logger.warning("CRM deal job: contact %s already on a call", contact.contact_id)
+        except Exception as exc:
+            logger.error("CRM deal job: call failed for contact %s: %s", contact.contact_id, exc)
+
+
+async def _birthday_anniversary_job() -> None:
+    """
+    Runs as part of the daily cron.
+    Checks all contacts for birthdays/anniversaries matching today (MM-DD).
+    For contacts tagged 'send-gift': places a mock gift order first.
+    Then initiates a special occasion call with context injected via variableValues.
+    """
+    from app.db import get_db, row_to_contact
+    from app.services.vapi import initiate_call, AlreadyOnCallError
+    from app.services.gifting import order_gift, choose_gifts_for_occasion
+
+    today_md = datetime.now(UTC).strftime("%m-%d")
+    logger.info("Birthday/anniversary check for %s", today_md)
+
+    try:
+        db = await get_db()
+        try:
+            async with db.execute("SELECT * FROM contacts") as cursor:
+                rows = await cursor.fetchall()
+            contacts = [row_to_contact(row) for row in rows]
+        finally:
+            await db.close()
+    except Exception as exc:
+        logger.error("Birthday/anniversary job: DB error: %s", exc)
+        return
+
+    for contact in contacts:
+        occasion = ""
+        if contact.birthday and contact.birthday[5:] == today_md:  # YYYY-MM-DD → MM-DD
+            occasion = "birthday"
+        elif contact.anniversary and contact.anniversary[5:] == today_md:
+            occasion = "anniversary"
+
+        if not occasion:
+            continue
+
+        logger.info("%s %s for contact %s (%s)", occasion.capitalize(), today_md, contact.contact_id, contact.name)
+
+        # Order gift if contact has the send-gift tag
+        gift_summary = ""
+        if "send-gift" in (contact.tags or []):
+            try:
+                gift_types = choose_gifts_for_occasion(occasion)
+                result = await order_gift(contact.contact_id, contact.name, occasion, gift_types)
+                gift_summary = result.get("summary", "")
+                logger.info("Gift ordered for %s: %s", contact.name, gift_summary)
+            except Exception as exc:
+                logger.error("Gift order failed for contact %s: %s", contact.contact_id, exc)
+
+        # Initiate the occasion call
+        try:
+            await initiate_call(contact, occasion=occasion, gift_summary=gift_summary)
+        except AlreadyOnCallError:
+            logger.warning("Birthday/anniversary: contact %s already on a call", contact.contact_id)
+        except Exception as exc:
+            logger.error("Birthday/anniversary call failed for contact %s: %s", contact.contact_id, exc)
 
 
 async def _daily_cron_job() -> None:
@@ -97,6 +319,45 @@ async def _daily_cron_job() -> None:
         logger.error("Daily cron job failed: %s", exc)
 
     logger.info("Daily cron job: done")
+
+    # Birthday / anniversary check
+    try:
+        await _birthday_anniversary_job()
+    except Exception as exc:
+        logger.error("Daily cron: birthday/anniversary job failed: %s", exc)
+
+    # Festival gifting check
+    try:
+        await _festival_job()
+    except Exception as exc:
+        logger.error("Daily cron: festival job failed: %s", exc)
+
+    # Deal-news / promotion job — ingest all contacts' social feeds then check for triggers
+    try:
+        from app.db import get_db, row_to_contact as _rtc
+        _db = await get_db()
+        try:
+            async with _db.execute("SELECT * FROM contacts") as _cur:
+                _all_contacts = [_rtc(r) for r in await _cur.fetchall()]
+        finally:
+            await _db.close()
+
+        if _has_social_ingest and _ingest_social_updates is not None:
+            for _c in _all_contacts:
+                try:
+                    await _ingest_social_updates(_c)
+                except Exception as _exc:
+                    logger.error("Daily cron: social ingest failed for %s: %s", _c.contact_id, _exc)
+
+        await _deal_news_job(_all_contacts)
+    except Exception as exc:
+        logger.error("Daily cron: deal-news job failed: %s", exc)
+
+    # CRM deal closure check
+    try:
+        await _crm_deal_job()
+    except Exception as exc:
+        logger.error("Daily cron: CRM deal job failed: %s", exc)
 
 
 async def _polling_job() -> None:

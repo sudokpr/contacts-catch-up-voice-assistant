@@ -11,3 +11,6 @@ __pycache__/
 
 # sqllite db files
 *.db
+
+
+**.DS_Store

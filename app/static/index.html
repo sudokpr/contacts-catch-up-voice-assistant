@@ -65,7 +65,8 @@
           <svg class="w-12 h-12 mx-auto mb-3 text-slate-800" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z"/>
           </svg>
-          <p class="text-sm">Select a contact or create one</p>
+          <p class="text-sm">Select a contact or add one</p>
+          <p class="text-xs text-slate-700 mt-1">Personal friends · Business partners</p>
         </div>
       </div>
     </main>
@@ -144,6 +145,23 @@
             <label class="block text-xs font-medium text-slate-400 mb-1">Tags <span class="text-slate-600">(comma-separated)</span></label>
             <input id="f-tags" type="text" placeholder="friend, college, tech"
               class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-sky-500" />
+          </div>
+
+          <div class="col-span-2 border-t border-slate-800 pt-3">
+            <label class="block text-xs font-medium text-slate-400 mb-1">Relationship Type</label>
+            <select id="f-rel-type" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-sky-500">
+              <option value="personal">Personal</option>
+              <option value="business">Business</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs font-medium text-slate-400 mb-1">Birthday</label>
+            <input id="f-birthday" type="date" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-sky-500" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-400 mb-1">Anniversary / Work Anniversary</label>
+            <input id="f-anniversary" type="date" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-sky-500" />
           </div>
 
           <div>
@@ -336,8 +354,9 @@ async function selectContact(id) {
   panel.innerHTML = renderDetailSkeleton(contact);
   updateCallViaText(contact);
 
-  // Load memories in background
+  // Load memories and gift orders in background
   loadMemories(id);
+  loadGiftOrders(id);
 }
 
 function fmt(iso) {
@@ -351,7 +370,10 @@ function outcomeColor(o) {
 }
 
 function renderDetailSkeleton(c) {
-  const tags = (c.tags || []).map(t => `<span class="bg-slate-800 text-slate-300 text-xs px-2 py-0.5 rounded-full">${t}</span>`).join('');
+  const relBadge = c.relationship_type === 'business'
+    ? '<span class="bg-amber-900/60 text-amber-400 text-xs px-2 py-0.5 rounded-full font-medium">Business</span>'
+    : '<span class="bg-sky-900/60 text-sky-400 text-xs px-2 py-0.5 rounded-full font-medium">Personal</span>';
+  const tags = [(relBadge), ...(c.tags || []).map(t => `<span class="bg-slate-800 text-slate-300 text-xs px-2 py-0.5 rounded-full">${t}</span>`)].join('');
   const socials = [
     c.social_handles?.twitter   ? `<a href="https://twitter.com/${c.social_handles.twitter}" target="_blank" class="text-sky-400 hover:underline text-sm">Twitter</a>` : '',
     c.social_handles?.instagram ? `<a href="https://instagram.com/${c.social_handles.instagram}" target="_blank" class="text-sky-400 hover:underline text-sm">Instagram</a>` : '',
@@ -419,6 +441,14 @@ function renderDetailSkeleton(c) {
         <p class="text-xs text-slate-500 mb-1">Last Outcome</p>
         <p class="text-sm ${outcomeColor(c.last_call_outcome)}">${c.last_call_outcome || '—'}</p>
       </div>
+      ${c.birthday ? `<div class="bg-slate-900 rounded-xl p-4 border border-slate-800">
+        <p class="text-xs text-slate-500 mb-1">Birthday</p>
+        <p class="text-sm">${c.birthday}</p>
+      </div>` : ''}
+      ${c.anniversary ? `<div class="bg-slate-900 rounded-xl p-4 border border-slate-800">
+        <p class="text-xs text-slate-500 mb-1">Anniversary</p>
+        <p class="text-sm">${c.anniversary}</p>
+      </div>` : ''}
     </div>
 
     ${c.last_call_note ? `
@@ -433,13 +463,35 @@ function renderDetailSkeleton(c) {
     <div class="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
       <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800">
         <h2 class="text-sm font-semibold">Live Call</h2>
-        <button id="call-btn" onclick="triggerCall('${c.contact_id}')"
-          class="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 0 0 2.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 0 1-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 0 0-1.091-.852H4.5A2.25 2.25 0 0 0 2.25 4.5v2.25Z"/>
-          </svg>
-          Call Now
-        </button>
+        <div class="flex items-center gap-2">
+          <!-- Demo occasion triggers -->
+          <div class="relative" id="demo-trigger-menu-wrap">
+            <button onclick="toggleDemoMenu()" title="Demo: trigger occasion call"
+              class="flex items-center gap-1 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-medium px-3 py-2 rounded-lg transition-colors">
+              🎭 Demo
+              <svg class="w-3 h-3 ml-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>
+            </button>
+            <div id="demo-trigger-menu" class="hidden absolute right-0 top-full mt-1 bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-50 min-w-[200px] py-1">
+              <div class="px-3 py-1.5 text-xs text-slate-500 font-medium uppercase tracking-wide">Occasion Calls</div>
+              <button onclick="triggerOccasionCall('${c.contact_id}','birthday')" class="w-full text-left px-3 py-2 text-sm hover:bg-slate-700 transition-colors">🎂 Birthday Wish</button>
+              <button onclick="triggerOccasionCall('${c.contact_id}','anniversary')" class="w-full text-left px-3 py-2 text-sm hover:bg-slate-700 transition-colors">💍 Anniversary Wish</button>
+              <button onclick="triggerOccasionCall('${c.contact_id}','diwali')" class="w-full text-left px-3 py-2 text-sm hover:bg-slate-700 transition-colors">🪔 Diwali Greetings</button>
+              <button onclick="triggerOccasionCall('${c.contact_id}','christmas')" class="w-full text-left px-3 py-2 text-sm hover:bg-slate-700 transition-colors">🎄 Christmas Greetings</button>
+              <div class="border-t border-slate-700 my-1"></div>
+              <div class="px-3 py-1.5 text-xs text-slate-500 font-medium uppercase tracking-wide">Business</div>
+              <button onclick="triggerOccasionCall('${c.contact_id}','deal_congratulations')" class="w-full text-left px-3 py-2 text-sm hover:bg-slate-700 transition-colors">🤝 Deal Congratulations</button>
+              <button onclick="triggerOccasionCall('${c.contact_id}','promotion_congratulations')" class="w-full text-left px-3 py-2 text-sm hover:bg-slate-700 transition-colors">🏆 Promotion Congrats</button>
+              <button onclick="triggerOccasionCall('${c.contact_id}','crm_deal')" class="w-full text-left px-3 py-2 text-sm hover:bg-slate-700 transition-colors">💼 CRM Deal Closure</button>
+            </div>
+          </div>
+          <button id="call-btn" onclick="triggerCall('${c.contact_id}')"
+            class="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 0 0 2.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 0 1-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 0 0-1.091-.852H4.5A2.25 2.25 0 0 0 2.25 4.5v2.25Z"/>
+            </svg>
+            Call Now
+          </button>
+        </div>
       </div>
       <div class="px-4 py-2 border-b border-slate-800 flex items-center gap-3" id="call-mode-bar" data-method="${c.contact_method}" data-phone="${c.phone}" data-sip="${c.sip || ''}">
         <span class="text-xs text-slate-500 shrink-0">Mode:</span>
@@ -457,6 +509,17 @@ function renderDetailSkeleton(c) {
       </div>
       <div id="call-live" class="p-4 min-h-[80px] flex items-center justify-center text-slate-600 text-sm">
         No active call
+      </div>
+    </div>
+
+    <!-- Gift Orders -->
+    <div class="bg-slate-900 rounded-xl border border-slate-800">
+      <div class="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
+        <h2 class="text-sm font-semibold">Gift Orders</h2>
+        <button onclick="clearGiftOrders('${c.contact_id}')" class="text-xs text-slate-500 hover:text-rose-400 transition-colors">Clear all</button>
+      </div>
+      <div id="gifts-list" class="p-4 space-y-2">
+        <p class="text-xs text-slate-600 text-center py-3">Loading gift orders…</p>
       </div>
     </div>
 
@@ -484,17 +547,67 @@ async function loadMemories(contactId) {
     }
     // Sort newest first
     memories.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-    const typeColor = { highlight: 'text-amber-400', fact: 'text-sky-400', summary: 'text-emerald-400', social: 'text-purple-400' };
+    const typeColor = { highlight: 'text-amber-400', fact: 'text-sky-400', summary: 'text-emerald-400', social: 'text-purple-400', commitment: 'text-rose-400' };
     el.innerHTML = memories.map(m => `
-      <div class="flex items-start gap-3 py-2 border-b border-slate-800 last:border-0">
+      <div class="flex items-start gap-3 py-2 border-b border-slate-800 last:border-0 group">
         <span class="text-xs font-medium ${typeColor[m.type] || 'text-slate-500'} mt-0.5 w-16 shrink-0">${m.type}</span>
-        <div class="flex-1">
+        <div class="flex-1 min-w-0">
           <p class="text-sm text-slate-300">${m.text}</p>
           <p class="text-xs text-slate-600 mt-0.5">${fmt(m.timestamp)}</p>
         </div>
+        <button onclick="deleteMemory('${contactId}','${m.entry_id}')"
+          class="shrink-0 opacity-0 group-hover:opacity-100 text-slate-600 hover:text-rose-400 transition-all text-xs px-1"
+          title="Delete memory">✕</button>
       </div>
     `).join('');
   } catch {}
+}
+
+async function deleteMemory(contactId, entryId) {
+  await api('DELETE', `/api/contacts/${contactId}/memories/${entryId}`);
+  loadMemories(contactId);
+}
+
+async function loadGiftOrders(contactId) {
+  const el = document.getElementById('gifts-list');
+  if (!el) return;
+  try {
+    const orders = await api('GET', `/api/contacts/${contactId}/gifts`);
+    if (!orders.length) {
+      el.innerHTML = `<p class="text-xs text-slate-600 text-center py-3">No gift orders yet</p>`;
+      return;
+    }
+    const giftIcon = { flowers: '💐', mug: '☕', sweet_box: '🍬' };
+    el.innerHTML = orders.map(o => `
+      <div class="flex items-start gap-3 py-2 border-b border-slate-800 last:border-0">
+        <span class="text-lg mt-0.5">${giftIcon[o.gift_type] || '🎁'}</span>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm text-slate-200 truncate">${o.description}</p>
+          <p class="text-xs text-slate-500">${o.vendor} · ${o.occasion} · ETA ${o.delivery_date || '—'}</p>
+          <p class="text-xs text-slate-600">Tracking: ${o.tracking}</p>
+        </div>
+        <button
+          onclick="toggleGiftDelivered('${contactId}', '${o.order_id}', ${!o.delivered})"
+          class="shrink-0 text-xs px-2 py-1 rounded transition-colors ${o.delivered
+            ? 'bg-emerald-900 text-emerald-300 hover:bg-emerald-800'
+            : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}"
+          title="${o.delivered ? 'Mark as pending' : 'Mark as delivered'}"
+        >${o.delivered ? '✓ Delivered' : 'Pending'}</button>
+      </div>
+    `).join('');
+  } catch {
+    el.innerHTML = `<p class="text-xs text-slate-600 text-center py-3">Could not load gift orders</p>`;
+  }
+}
+
+async function toggleGiftDelivered(contactId, orderId, delivered) {
+  await api('PATCH', `/api/contacts/${contactId}/gifts/${orderId}`, { delivered });
+  loadGiftOrders(contactId);
+}
+
+async function clearGiftOrders(contactId) {
+  await api('DELETE', `/api/contacts/${contactId}/gifts`);
+  loadGiftOrders(contactId);
 }
 
 // ─── Live call ────────────────────────────────────────────────────────────────
@@ -561,27 +674,22 @@ function endWebCall() {
   }
 }
 
-async function _startWebCall(contactId) {
-  const contact = contacts.find(c => c.contact_id === contactId);
-  if (!contact) throw new Error('Contact not found');
-
-  // Tear down any existing Vapi instance
+// Creates a Vapi SDK instance wired up with standard event handlers.
+// Returns { vapi, registerCallId } — caller is responsible for calling vapi.start().
+function _createVapiInstance(contactId) {
   if (vapiInstance) { try { vapiInstance.end(); } catch {} vapiInstance = null; }
 
   const vapi = new window.VapiClass(vapiConfig.vapi_public_key);
   vapiInstance = vapi;
 
-  function _registerCallId(data) {
+  function registerCallId(data) {
     const callId = (typeof data === 'string' ? data : data?.id || data?.call?.id);
     if (callId) {
       api('POST', '/api/calls/web-register', { call_id: callId, contact_id: contactId }).catch(() => {});
     }
   }
 
-  // call-start-success carries the call object with ID — most reliable registration point
-  vapi.on('call-start-success', (data) => {
-    _registerCallId(data);
-  });
+  vapi.on('call-start-success', (data) => { registerCallId(data); });
 
   vapi.on('call-start', () => {
     activeCallId = contactId;
@@ -590,7 +698,6 @@ async function _startWebCall(contactId) {
     renderList(contacts.filter(() => true));
   });
 
-  // call-start-failed: startup errors (mic denied, network, etc.)
   vapi.on('call-start-failed', (data) => {
     stopCallTimer();
     activeCallId = null;
@@ -606,7 +713,6 @@ async function _startWebCall(contactId) {
     activeCallId = null;
     vapiInstance = null;
     updateCallUI('ended', { outcome: 'answered' });
-    // Reload contact data after webhook has time to process (needs APP_BASE/ngrok)
     setTimeout(() => reloadContact(contactId), 4000);
   });
 
@@ -621,6 +727,35 @@ async function _startWebCall(contactId) {
     renderList(contacts.filter(() => true));
   });
 
+  vapi.on('message', (msg) => {
+    if (!msg) return;
+    if (msg.type === 'transcript' && msg.transcriptType === 'final') {
+      const speaker = msg.role === 'assistant' ? '🤖' : '🧑';
+      appendCallEvent(`${speaker} ${msg.transcript}`);
+    }
+    if (msg.type === 'function-call') {
+      appendCallEvent(`🔧 Tool: ${msg.functionCall?.name || 'unknown'}`);
+    }
+  });
+
+  return { vapi, registerCallId };
+}
+
+async function _startWebCall(contactId) {
+  const contact = contacts.find(c => c.contact_id === contactId);
+  if (!contact) throw new Error('Contact not found');
+
+  const { vapi, registerCallId } = _createVapiInstance(contactId);
+
+  // Pre-fetch memories so the assistant has them in context from word one
+  let recentMemories = '';
+  try {
+    const memCtx = await fetch(`/api/contacts/${contact.contact_id}/memories/context`).then(r => r.json());
+    recentMemories = memCtx.recent_memories || '';
+  } catch (e) {
+    console.warn('[Vapi] Could not pre-fetch memories:', e);
+  }
+
   // Start call — vapi_assistant_id + per-contact variable overrides
   const call = await vapi.start(vapiConfig.vapi_assistant_id, {
     variableValues: {
@@ -629,16 +764,24 @@ async function _startWebCall(contactId) {
       contact_name: contact.name,
       contact_tags: (contact.tags || []).join(', ') || 'none',
       last_call_note: contact.last_call_note || 'No previous calls recorded.',
+      occasion_context: '',
+      tone_instructions: contact.relationship_type === 'business'
+        ? 'Use a professional, respectful, and warm tone. Be concise and mindful of their time.'
+        : 'Use a casual, warm, friendly tone. Informal language is perfectly fine.',
+      gift_status: '',
+      recent_memories: recentMemories,
+      meeting_ask_section: 'STEP 4 — MEETING ASK:\n"Would you be up for catching up properly sometime soon?"\n\n- If yes: call get_calendar_slots, offer 2 slots, confirm one, call create_calendar_event.\n- If maybe/no: "Totally fine — I\'ll pass that along."\n\n---',
     },
   });
 
   // Fallback registration from start() return value (call-start-success is preferred)
   console.debug('[Vapi] start() resolved:', call);
-  _registerCallId(call);
+  registerCallId(call);
 }
 
-async function _startBackendCall(contactId) {
-  const result = await api('POST', `/api/calls/trigger/${contactId}`);
+async function _startBackendCall(contactId, occasion = '') {
+  const body = occasion ? { occasion } : undefined;
+  const result = await api('POST', `/api/calls/trigger/${contactId}`, body);
   if (result && result.status === 'error') {
     throw new Error(result.detail || 'Call failed to initiate');
   }
@@ -647,6 +790,67 @@ async function _startBackendCall(contactId) {
   updateCallUI('connecting', null);
   subscribeCallSSE(contactId);
   renderList(contacts.filter(() => true));
+}
+
+function toggleDemoMenu() {
+  const menu = document.getElementById('demo-trigger-menu');
+  if (menu) menu.classList.toggle('hidden');
+}
+
+// Close demo menu when clicking outside
+document.addEventListener('click', (e) => {
+  const wrap = document.getElementById('demo-trigger-menu-wrap');
+  if (wrap && !wrap.contains(e.target)) {
+    const menu = document.getElementById('demo-trigger-menu');
+    if (menu) menu.classList.add('hidden');
+  }
+});
+
+async function triggerOccasionCall(contactId, occasion) {
+  const menu = document.getElementById('demo-trigger-menu');
+  if (menu) menu.classList.add('hidden');
+  const labels = {
+    birthday: '🎂 Birthday Wish', anniversary: '💍 Anniversary Wish',
+    diwali: '🪔 Diwali Greetings', christmas: '🎄 Christmas Greetings',
+    deal_congratulations: '🤝 Deal Congratulations',
+    promotion_congratulations: '🏆 Promotion Congrats',
+    crm_deal: '💼 CRM Deal Closure',
+  };
+  const label = labels[occasion] || occasion;
+
+  if (!window.VapiClass) {
+    updateCallUI('error', 'Vapi SDK not loaded — cannot start WebRTC call');
+    return;
+  }
+  if (vapiInstance) {
+    updateCallUI('error', 'A call is already in progress');
+    return;
+  }
+
+  updateCallUI('connecting', null);
+  const btn = document.getElementById('call-btn');
+  if (btn) btn.disabled = true;
+
+  try {
+    // Fetch pre-computed variableValues for this occasion (includes occasion_context,
+    // tone_instructions, meeting_ask_section, gift_status, recent_memories)
+    const { variable_values, assistant_id } = await fetch(
+      `/api/calls/occasion-variables/${contactId}?occasion=${encodeURIComponent(occasion)}`
+    ).then(r => r.json());
+
+    subscribeCallSSE(contactId);
+    const { vapi, registerCallId } = _createVapiInstance(contactId);
+
+    const call = await vapi.start(assistant_id, { variableValues: variable_values });
+    registerCallId(call);
+    appendCallEvent(`Demo call started: ${label}`);
+  } catch (err) {
+    stopCallTimer();
+    activeCallId = null;
+    vapiInstance = null;
+    updateCallUI('error', err.message || 'Failed to start occasion call');
+    if (btn) { btn.disabled = false; btn.innerHTML = callBtnHTML(); }
+  }
 }
 
 function callBtnHTML() {
@@ -755,9 +959,14 @@ function subscribeCallSSE(contactId) {
       const reason = event.ended_reason;
       if (!reason) {
         updateCallUI('in-progress', null);
-        appendCallEvent('Call status update received');
       } else {
-        appendCallEvent(`Status: ${reason}`);
+        appendCallEvent(`📶 ${reason}`);
+      }
+    } else if (event.type === 'transcript-update') {
+      // Skip SSE transcripts when Vapi SDK is active — SDK events already handle these
+      if (!vapiInstance) {
+        const speaker = event.role === 'assistant' ? '🤖' : '🧑';
+        if (event.transcript) appendCallEvent(`${speaker} ${event.transcript}`);
       }
     } else if (event.type === 'call-ended') {
       clearTimeout(watchdog);
@@ -822,6 +1031,9 @@ function openEditModal(contactId) {
   document.getElementById('f-twitter').value = c.social_handles?.twitter || '';
   document.getElementById('f-instagram').value = c.social_handles?.instagram || '';
   document.getElementById('f-linkedin').value = c.social_handles?.linkedin || '';
+  document.getElementById('f-rel-type').value = c.relationship_type || 'personal';
+  document.getElementById('f-birthday').value = c.birthday || '';
+  document.getElementById('f-anniversary').value = c.anniversary || '';
 
   setMethod(c.contact_method || 'phone');
   document.getElementById('f-sip').value = c.sip || '';
@@ -868,6 +1080,9 @@ async function submitContactForm(e) {
       instagram: document.getElementById('f-instagram').value.trim() || null,
       linkedin: document.getElementById('f-linkedin').value.trim() || null,
     },
+    relationship_type: document.getElementById('f-rel-type').value || 'personal',
+    birthday: document.getElementById('f-birthday').value || null,
+    anniversary: document.getElementById('f-anniversary').value || null,
   };
 
   const submitBtn = document.getElementById('form-submit-label');

@@ -221,52 +221,52 @@ TOOL_DEFINITIONS = [
 # ---------------------------------------------------------------------------
 
 SYSTEM_PROMPT = """\
-You are a personal AI assistant making a brief, warm outbound call on behalf of {{user_name}} to {{contact_name}}.
+{{occasion_context}}
+
+Tone: {{tone_instructions}}
+
+{{gift_status}}
+
+You are an AI relationship manager making a brief, warm outbound call on behalf of {{user_name}} to {{contact_name}}.
+
+Background on {{contact_name}} (use naturally in conversation — do not recite):
+{{recent_memories}}
 
 ---
 
-STEP 1 — LOAD MEMORY (MANDATORY — do this silently before saying a single word):
-You MUST call get_memory(contact_id="{{contact_id}}") right now.
-Do NOT greet or speak until get_memory has returned.
-Memories are sorted newest-first — the first entries are the most recent.
-Pick ONE specific, concrete thing from the returned memories to weave in after pleasantries (Step 3).
-If get_memory returns nothing useful, skip Step 3 and go straight to Step 4.
-
-IMPORTANT: The memories returned by get_memory are the ONLY facts you are allowed to reference.
-Do NOT invent, assume, or infer any personal details beyond what get_memory explicitly returns.
-
----
-
-STEP 2 — OPEN WITH PLEASANTRIES:
+STEP 1 — OPEN WITH PLEASANTRIES:
 Greet warmly, introduce yourself, check if it's a good time, then ask how they're doing:
 
 "Hi {{contact_name}}! This is an AI assistant calling on behalf of {{user_name}} — hope I'm not catching you at a bad time? How are you doing?"
 
 - If it's not a good time: "No worries at all — I'll let {{user_name}} know. Take care!" Then end.
-- Listen to their answer. Respond warmly to whatever they say — one brief, genuine response.
+- Listen to their answer. Respond warmly — one brief, genuine response.
 
 ---
 
-STEP 3 — WEAVE IN ONE MEMORY (only if get_memory returned something concrete):
-Bring in the specific thing you chose in Step 1. It must be a direct quote or clear paraphrase from a memory entry — not an inference.
+STEP 2 — WEAVE IN ONE MEMORY:
+Bring in one specific thing from the background context above. It must come directly from that context — not invented.
 
-"By the way, last time you mentioned [exact thing from memory]. How did that go?"
+"By the way, last time you mentioned [exact thing]. How did that go?"
 
 - One natural follow-up at most.
-- Save anything new they share: call save_memory(contact_id="{{contact_id}}", text="...") silently.
+- If the contact brings up a topic you want more detail on, call search_memory(contact_id="{{contact_id}}", query="<topic>") for a targeted lookup.
 
 ---
 
-STEP 4 — MEETING ASK:
-"{{user_name}} was saying it'd be great to catch up properly — would you be up for a time sometime soon?"
+{{meeting_ask_section}}
 
-- If yes: call get_calendar_slots(contact_id="{{contact_id}}"), offer 2 slots, confirm one, call create_calendar_event.
-- If maybe/no: "Totally fine — I'll pass that along."
-
----
-
-STEP 5 — CLOSE:
+STEP 4 — CLOSE:
 "Great talking — I'll pass everything back to {{user_name}}. Take care, {{contact_name}}!"
+
+---
+
+MEMORY CAPTURE — save throughout the entire call, not just in Step 2:
+Whenever the contact says anything worth remembering, call save_memory(contact_id="{{contact_id}}", text="...") silently. Save immediately — do not wait.
+
+Worth saving: new job, promotion, move, health update, upcoming trip, project they're working on, a worry or decision they're facing, anything exciting or stressful, any commitment ("call me next month").
+Not worth saving: small talk, pleasantries, things already in the background context.
+Format: plain sentence — e.g. "Just started a new role at Google as a senior PM."
 
 ---
 
@@ -277,7 +277,7 @@ RULES:
 - Be honest you are an AI assistant calling on {{user_name}}'s behalf.
 - Never mention tools, databases, or that you are taking notes.
 - Always use contact_id "{{contact_id}}" in every tool call.
-- CRITICAL — NO HALLUCINATION: Only state things that appear explicitly in get_memory results. If it is not in memory, do not say it. When uncertain, ask — never assert.\
+- CRITICAL — NO HALLUCINATION: Only reference things that appear explicitly in the background context. If it is not there, do not say it. When uncertain, ask — never assert.
 """
 
 
@@ -452,8 +452,43 @@ def create_assistant(client: httpx.Client, tool_ids: dict[str, str]) -> str:
 # Main
 # ---------------------------------------------------------------------------
 
+def patch_prompt_only(client: httpx.Client) -> None:
+    """
+    Update only the assistant's system prompt, preserving all other settings including toolIds.
+    Use this instead of a raw PATCH to avoid accidentally dropping tool associations.
+    """
+    print("\n=== Patching assistant prompt (preserving toolIds) ===\n")
+
+    assistant_id = os.environ.get("VAPI_ASSISTANT_ID", "")
+    if not assistant_id:
+        sys.exit("ERROR: VAPI_ASSISTANT_ID not set in environment.")
+
+    # Fetch current assistant to read provider, model, and toolIds
+    resp = client.get(f"https://api.vapi.ai/assistant/{assistant_id}", headers=HEADERS, timeout=15)
+    resp.raise_for_status()
+    current = resp.json()
+    model = current.get("model", {})
+    tool_ids = model.get("toolIds") or []
+
+    patch_resp = client.patch(
+        f"https://api.vapi.ai/assistant/{assistant_id}",
+        headers=HEADERS,
+        json={"model": {
+            "provider": model["provider"],
+            "model": model["model"],
+            "toolIds": tool_ids,
+            "messages": [{"role": "system", "content": SYSTEM_PROMPT}],
+        }},
+        timeout=15,
+    )
+    patch_resp.raise_for_status()
+    restored = patch_resp.json().get("model", {}).get("toolIds") or []
+    print(f"  ✓ Prompt updated — {len(restored)} tools preserved on assistant {assistant_id}")
+
+
 def main() -> None:
     skip_numbers = "--skip-numbers" in sys.argv
+    patch_only = "--patch-prompt" in sys.argv
 
     print("Vapi provisioning")
     print(f"  APP_BASE    : {APP_BASE}")
@@ -464,6 +499,10 @@ def main() -> None:
         print("  --skip-numbers: skipping phone number provisioning")
 
     with httpx.Client() as client:
+        if patch_only:
+            patch_prompt_only(client)
+            return
+
         pstn_id = ""
         sip_trunk_id = ""
 
