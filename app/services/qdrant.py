@@ -36,7 +36,7 @@ def _use_qdrant_inference() -> bool:
 async def _get_alias_target(client: AsyncQdrantClient, alias: str) -> str | None:
     """Return the real collection name the alias points to, or None."""
     try:
-        result = await client.get_collection_aliases(collection_name=alias)
+        result = await client.get_aliases()
         for a in result.aliases:
             if a.alias_name == alias:
                 return a.collection_name

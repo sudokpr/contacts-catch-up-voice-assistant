@@ -92,7 +92,7 @@ async def _embed_external(text: str, api_key: str, base_url: str, model: str) ->
 
 async def _get_alias_target(client: AsyncQdrantClient, alias: str) -> str | None:
     try:
-        result = await client.get_collection_aliases(collection_name=alias)
+        result = await client.get_aliases()
         for a in result.aliases:
             if a.alias_name == alias:
                 return a.collection_name
