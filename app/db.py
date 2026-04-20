@@ -1,9 +1,10 @@
 import json
+import os
 import aiosqlite
 from typing import Optional, Any
 from app.models.contact import Contact, TimeWindow, SocialHandles
 
-DATABASE_URL = "contacts.db"
+DATABASE_URL = os.environ.get("DATABASE_URL", "contacts.db")
 
 
 async def get_db() -> aiosqlite.Connection:
