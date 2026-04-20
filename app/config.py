@@ -22,10 +22,10 @@ class Settings(BaseSettings):
     QDRANT_API_KEY: str
     QDRANT_ENDPOINT: str
 
-    # OpenAI-compatible LLM
-    OPENAI_API_KEY: str
-    OPENAI_BASE_URL: str
-    OPENAI_MODEL: str
+    # Embedding (OpenAI-compatible; supports Gemini, nomic, etc.)
+    EMBEDDING_API_KEY: str
+    EMBEDDING_BASE_URL: str
+    EMBEDDING_MODEL: str = "text-embedding-004"
 
     # Google Calendar (optional)
     GOOGLE_CLIENT_ID: str = ""
@@ -51,9 +51,8 @@ _REQUIRED_VARS = [
     "VAPI_PHONE_NUMBER_ID",
     "QDRANT_API_KEY",
     "QDRANT_ENDPOINT",
-    "OPENAI_API_KEY",
-    "OPENAI_BASE_URL",
-    "OPENAI_MODEL",
+    "EMBEDDING_API_KEY",
+    "EMBEDDING_BASE_URL",
 ]
 
 
