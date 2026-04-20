@@ -217,36 +217,11 @@ _NO_ANSWER_REASONS = {
 }
 
 
-async def classify_outcome(ended_reason: Optional[str]) -> str:
+def classify_outcome(ended_reason: Optional[str]) -> str:
     if ended_reason in _ANSWERED_REASONS:
         return "answered"
     if ended_reason in _BUSY_REASONS:
         return "busy"
-    if ended_reason in _NO_ANSWER_REASONS:
-        return "no_answer"
-
-    if ended_reason:
-        try:
-            from app.config import get_settings
-            from openai import AsyncOpenAI
-            settings = get_settings()
-            client = AsyncOpenAI(base_url=settings.OPENAI_BASE_URL, api_key=settings.OPENAI_API_KEY)
-            prompt = (
-                f"A phone call ended with reason: '{ended_reason}'. "
-                "Classify as exactly one of: answered, busy, no_answer. "
-                "Reply with only the single word."
-            )
-            response = await client.chat.completions.create(
-                model=settings.OPENAI_MODEL,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.0,
-            )
-            result = (response.choices[0].message.content or "").strip().lower()
-            if result in {"answered", "busy", "no_answer"}:
-                return result
-        except Exception as exc:
-            logger.warning("LLM outcome classification failed for reason '%s': %s", ended_reason, exc)
-
     return "no_answer"
 
 
@@ -282,7 +257,7 @@ async def process_call_webhook(payload: VapiWebhookPayload) -> None:
         len(payload.transcript) if payload.transcript else 0,
     )
 
-    outcome = await classify_outcome(ended_reason)
+    outcome = classify_outcome(ended_reason)
     logger.info("process_call_webhook: outcome=%s for call %s", outcome, call_id)
 
     summary = ""

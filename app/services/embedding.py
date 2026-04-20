@@ -34,17 +34,18 @@ def _deterministic_fallback_embedding(text: str, size: int = VECTOR_SIZE) -> lis
 
 async def embed(text: str) -> list[float]:
     """
-    Calls nomic-embed-text via OpenAI-compatible embeddings endpoint.
+    Calls the configured embedding model via OpenAI-compatible embeddings endpoint.
+    Supports Gemini (text-embedding-004), nomic-embed-text, or any compatible provider.
     Returns a float vector of dimension 768.
     """
     settings = get_settings()
     client = AsyncOpenAI(
-        api_key=settings.OPENAI_API_KEY,
-        base_url=settings.OPENAI_BASE_URL,
+        api_key=settings.EMBEDDING_API_KEY,
+        base_url=settings.EMBEDDING_BASE_URL,
     )
     try:
         response = await client.embeddings.create(
-            model="nomic-embed-text",
+            model=settings.EMBEDDING_MODEL,
             input=text,
         )
         return response.data[0].embedding
