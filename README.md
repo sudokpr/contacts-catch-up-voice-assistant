@@ -438,3 +438,5 @@ Here's a full day in the life of the system managing **Arjun Mehta**, a SaaS fou
 - Real gifting vendor API (Ferns & Petals, Amazon Business)
 - Multi-user support with per-user assistant provisioning
 - Mobile app for managing contacts on the go
+- Multi-language support. Change voice based on contact's locale
+- Use inference from from Qdrant
