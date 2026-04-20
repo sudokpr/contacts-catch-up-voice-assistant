@@ -1,32 +1,30 @@
 #!/usr/bin/env python3
 """
-setup_vapi.py — One-shot Vapi provisioning script.
+setup_vapi.py — Idempotent Vapi provisioning script.
 
 Usage:
     python scripts/setup_vapi.py [--skip-numbers]
 
-Reads VAPI_API_KEY, APP_BASE, and USER_NAME from .env (or environment).
+Reads VAPI_API_KEY, APP_BASE, USER_NAME, and existing IDs from .env (or environment).
 
-Phase 0a — Buy a Vapi-managed PSTN phone number (US, free tier).
-Phase 0b — Create a SIP trunk phone number for international / SIP-mode contacts.
-             Requires SIP_TRUNK_URI, SIP_TRUNK_USER, SIP_TRUNK_PASS env vars
-             (from a provider like Twilio Elastic SIP, Vonage, or any SIP server).
-             Skipped if those vars are not set.
-Phase 1  — Create tools (fails if any tool with the same name already exists).
-Phase 2  — Create assistant using the tool IDs from Phase 1.
+Behaviour (fully idempotent — safe to re-run):
+  - VAPI_ASSISTANT_ID set   → patch prompt + serverUrl + tool URLs on existing assistant
+  - VAPI_ASSISTANT_ID unset → create everything from scratch
+  - VAPI_PHONE_NUMBER_ID set  → skip PSTN purchase
+  - VAPI_SIP_TRUNK_ID set     → skip SIP creation
+  - Tool already exists by name → patch its server URL; otherwise create it
 
-Pass --skip-numbers to skip Phase 0 (if you already have phone numbers configured).
-
-Prints all created IDs at the end — copy them into your .env.
+Pass --skip-numbers to skip phone number provisioning entirely.
 """
 
-import json
 import os
 import sys
 import httpx
 from pathlib import Path
 
-PHONE_NUMBER_API = "https://api.vapi.ai/phone-number"
+PHONE_NUMBER_API   = "https://api.vapi.ai/phone-number"
+ASSISTANT_API      = "https://api.vapi.ai/assistant"
+TOOL_API           = "https://api.vapi.ai/tool"
 
 
 # ---------------------------------------------------------------------------
@@ -285,12 +283,7 @@ RULES:
 # Phase 0a: Buy a Vapi-managed PSTN phone number
 # ---------------------------------------------------------------------------
 
-def create_pstn_number(client: httpx.Client) -> str:
-    """
-    Buy a Vapi-managed US phone number.
-    Returns the phone number ID to use as VAPI_PHONE_NUMBER_ID.
-    Skips and returns existing ID if VAPI_PHONE_NUMBER_ID is already set.
-    """
+def ensure_pstn_number(client: httpx.Client) -> str:
     print("\n=== Phase 0a: PSTN phone number ===\n")
 
     existing_id = os.environ.get("VAPI_PHONE_NUMBER_ID", "")
@@ -304,19 +297,18 @@ def create_pstn_number(client: httpx.Client) -> str:
         json={
             "provider": "vapi",
             "name": "Contacts Catch-up PSTN",
-            "areaCode": "415",   # San Francisco area code — change if preferred
+            "areaCode": "415",
         },
         timeout=30,
     )
     if resp.status_code not in (200, 201):
         print(f"  WARNING: Could not buy PSTN number: {resp.status_code} {resp.text}")
-        print("  You can buy one manually in the Vapi dashboard and set VAPI_PHONE_NUMBER_ID.")
+        print("  Buy one manually in the Vapi dashboard and set VAPI_PHONE_NUMBER_ID.")
         return ""
 
     data = resp.json()
     number_id = data["id"]
-    number = data.get("number", "(unknown)")
-    print(f"  ✓ Bought PSTN number: {number}  id={number_id}")
+    print(f"  ✓ Bought PSTN number: {data.get('number', '(unknown)')}  id={number_id}")
     return number_id
 
 
@@ -324,12 +316,7 @@ def create_pstn_number(client: httpx.Client) -> str:
 # Phase 0b: Create a Vapi-native SIP number
 # ---------------------------------------------------------------------------
 
-def create_sip_number(client: httpx.Client) -> str:
-    """
-    Create a Vapi-managed SIP phone number (sip:xxx@sip.vapi.ai).
-    No third-party SIP provider needed — Vapi hosts it natively.
-    Returns the number ID to use as VAPI_SIP_TRUNK_ID.
-    """
+def ensure_sip_number(client: httpx.Client) -> str:
     print("\n=== Phase 0b: Vapi SIP number ===\n")
 
     existing_id = os.environ.get("VAPI_SIP_TRUNK_ID", "")
@@ -354,90 +341,120 @@ def create_sip_number(client: httpx.Client) -> str:
 
     data = resp.json()
     number_id = data["id"]
-    sip_uri = data.get("sipUri") or data.get("number", "(unknown)")
-    print(f"  ✓ Vapi SIP number: {sip_uri}  id={number_id}")
+    print(f"  ✓ Vapi SIP number: {data.get('sipUri') or data.get('number', '(unknown)')}  id={number_id}")
     return number_id
 
 
 # ---------------------------------------------------------------------------
-# Phase 1: Create tools
+# Phase 1: Ensure tools (create or patch server URL)
 # ---------------------------------------------------------------------------
 
-def create_tools(client: httpx.Client) -> dict[str, str]:
+def ensure_tools(client: httpx.Client) -> dict[str, str]:
     """
-    Create all tool definitions on Vapi.
-    Fails immediately if a tool with the same name already exists.
+    For each tool definition:
+      - If a tool with that name already exists → patch its server URL.
+      - Otherwise → create it.
     Returns {tool_name: tool_id}.
     """
-    print("\n=== Phase 1: Creating tools ===\n")
+    print("\n=== Phase 1: Ensuring tools ===\n")
 
-    # Fetch existing tools to check for name conflicts
-    resp = client.get("https://api.vapi.ai/tool", headers=HEADERS, timeout=15)
+    resp = client.get(TOOL_API, headers=HEADERS, timeout=15)
     resp.raise_for_status()
     existing = {t["function"]["name"]: t["id"] for t in resp.json() if t.get("type") == "function"}
-
-    conflicts = [defn["function"]["name"] for defn in TOOL_DEFINITIONS if defn["function"]["name"] in existing]
-    if conflicts:
-        print("ERROR: The following tools already exist on this Vapi account:")
-        for name in conflicts:
-            print(f"  - {name} (id: {existing[name]})")
-        print("\nDelete them first, or use the existing IDs instead of running this script.")
-        sys.exit(1)
 
     tool_ids: dict[str, str] = {}
     for defn in TOOL_DEFINITIONS:
         name = defn["function"]["name"]
-        resp = client.post("https://api.vapi.ai/tool", headers=HEADERS, json=defn, timeout=15)
-        if resp.status_code not in (200, 201):
-            sys.exit(f"ERROR creating tool '{name}': {resp.status_code} {resp.text}")
-        tool_id = resp.json()["id"]
-        tool_ids[name] = tool_id
-        print(f"  ✓ {name:35s} id={tool_id}")
+        if name in existing:
+            tool_id = existing[name]
+            patch_resp = client.patch(
+                f"{TOOL_API}/{tool_id}",
+                headers=HEADERS,
+                json={"server": defn["server"]},
+                timeout=15,
+            )
+            if patch_resp.status_code not in (200, 201):
+                print(f"  WARNING: Could not patch tool '{name}': {patch_resp.status_code} {patch_resp.text}")
+            else:
+                print(f"  ~ {name:35s} patched  id={tool_id}")
+            tool_ids[name] = tool_id
+        else:
+            create_resp = client.post(TOOL_API, headers=HEADERS, json=defn, timeout=15)
+            if create_resp.status_code not in (200, 201):
+                sys.exit(f"ERROR creating tool '{name}': {create_resp.status_code} {create_resp.text}")
+            tool_id = create_resp.json()["id"]
+            tool_ids[name] = tool_id
+            print(f"  ✓ {name:35s} created  id={tool_id}")
 
     return tool_ids
 
 
 # ---------------------------------------------------------------------------
-# Phase 2: Create assistant
+# Phase 2: Create or patch assistant
 # ---------------------------------------------------------------------------
 
+def patch_assistant(client: httpx.Client, assistant_id: str, tool_ids: dict[str, str]) -> None:
+    """Patch existing assistant: update prompt, serverUrl, and tool associations."""
+    print(f"\n=== Phase 2: Patching assistant {assistant_id} ===\n")
+
+    resp = client.get(f"{ASSISTANT_API}/{assistant_id}", headers=HEADERS, timeout=15)
+    resp.raise_for_status()
+    current_model = resp.json().get("model", {})
+
+    patch_resp = client.patch(
+        f"{ASSISTANT_API}/{assistant_id}",
+        headers=HEADERS,
+        json={
+            "serverUrl": WEBHOOK_URL,
+            "model": {
+                "provider": current_model.get("provider", "openai"),
+                "model": current_model.get("model", "gpt-4.1"),
+                "toolIds": list(tool_ids.values()),
+                "messages": [{"role": "system", "content": SYSTEM_PROMPT}],
+            },
+        },
+        timeout=15,
+    )
+    patch_resp.raise_for_status()
+    restored = patch_resp.json().get("model", {}).get("toolIds") or []
+    print(f"  ✓ Prompt + serverUrl updated — {len(restored)} tools on assistant {assistant_id}")
+
+
 def create_assistant(client: httpx.Client, tool_ids: dict[str, str]) -> str:
-    """Create the Contacts Catch-up assistant on Vapi. Returns the assistant ID."""
+    """Create a new Contacts Catch-up assistant. Returns the assistant ID."""
     print("\n=== Phase 2: Creating assistant ===\n")
 
-    assistant_payload = {
-        "name": "Contacts Catch-up",
-        "serverUrl": WEBHOOK_URL,
-        "model": {
-            "provider": "openai",
-            "model": "gpt-4.1",
-            "toolIds": list(tool_ids.values()),
-            "messages": [{"role": "system", "content": SYSTEM_PROMPT}],
-        },
-        "voice": {
-            "provider": "vapi",
-            "voiceId": "Elliot",
-        },
-        "firstMessage": "",
-        "voicemailMessage": "Please call back when you're available.",
-        "endCallMessage": "Goodbye.",
-        "transcriber": {
-            "provider": "deepgram",
-            "model": "flux-general-en",
-            "language": "en",
-            "fallbackPlan": {"autoFallback": {"enabled": True}},
-        },
-        "analysisPlan": {
-            "summaryPlan": {"enabled": False},
-            "successEvaluationPlan": {"enabled": False},
-        },
-        "backgroundDenoisingEnabled": True,
-    }
-
     resp = client.post(
-        "https://api.vapi.ai/assistant",
+        ASSISTANT_API,
         headers=HEADERS,
-        json=assistant_payload,
+        json={
+            "name": "Contacts Catch-up",
+            "serverUrl": WEBHOOK_URL,
+            "model": {
+                "provider": "openai",
+                "model": "gpt-4.1",
+                "toolIds": list(tool_ids.values()),
+                "messages": [{"role": "system", "content": SYSTEM_PROMPT}],
+            },
+            "voice": {
+                "provider": "vapi",
+                "voiceId": "Elliot",
+            },
+            "firstMessage": "",
+            "voicemailMessage": "Please call back when you're available.",
+            "endCallMessage": "Goodbye.",
+            "transcriber": {
+                "provider": "deepgram",
+                "model": "flux-general-en",
+                "language": "en",
+                "fallbackPlan": {"autoFallback": {"enabled": True}},
+            },
+            "analysisPlan": {
+                "summaryPlan": {"enabled": False},
+                "successEvaluationPlan": {"enabled": False},
+            },
+            "backgroundDenoisingEnabled": True,
+        },
         timeout=15,
     )
     if resp.status_code not in (200, 201):
@@ -452,80 +469,45 @@ def create_assistant(client: httpx.Client, tool_ids: dict[str, str]) -> str:
 # Main
 # ---------------------------------------------------------------------------
 
-def patch_prompt_only(client: httpx.Client) -> None:
-    """
-    Update only the assistant's system prompt, preserving all other settings including toolIds.
-    Use this instead of a raw PATCH to avoid accidentally dropping tool associations.
-    """
-    print("\n=== Patching assistant prompt (preserving toolIds) ===\n")
-
-    assistant_id = os.environ.get("VAPI_ASSISTANT_ID", "")
-    if not assistant_id:
-        sys.exit("ERROR: VAPI_ASSISTANT_ID not set in environment.")
-
-    # Fetch current assistant to read provider, model, and toolIds
-    resp = client.get(f"https://api.vapi.ai/assistant/{assistant_id}", headers=HEADERS, timeout=15)
-    resp.raise_for_status()
-    current = resp.json()
-    model = current.get("model", {})
-    tool_ids = model.get("toolIds") or []
-
-    patch_resp = client.patch(
-        f"https://api.vapi.ai/assistant/{assistant_id}",
-        headers=HEADERS,
-        json={"model": {
-            "provider": model["provider"],
-            "model": model["model"],
-            "toolIds": tool_ids,
-            "messages": [{"role": "system", "content": SYSTEM_PROMPT}],
-        }},
-        timeout=15,
-    )
-    patch_resp.raise_for_status()
-    restored = patch_resp.json().get("model", {}).get("toolIds") or []
-    print(f"  ✓ Prompt updated — {len(restored)} tools preserved on assistant {assistant_id}")
-
-
 def main() -> None:
     skip_numbers = "--skip-numbers" in sys.argv
-    patch_only = "--patch-prompt" in sys.argv
+    existing_assistant_id = os.environ.get("VAPI_ASSISTANT_ID", "")
 
-    print("Vapi provisioning")
-    print(f"  APP_BASE    : {APP_BASE}")
-    print(f"  USER_NAME   : {USER_NAME}")
-    print(f"  Webhook URL : {WEBHOOK_URL}")
-    print(f"  Tool base   : {TOOL_BASE_URL}")
-    if skip_numbers:
-        print("  --skip-numbers: skipping phone number provisioning")
+    print("Vapi provisioning (idempotent)")
+    print(f"  APP_BASE      : {APP_BASE}")
+    print(f"  USER_NAME     : {USER_NAME}")
+    print(f"  Webhook URL   : {WEBHOOK_URL}")
+    print(f"  Tool base URL : {TOOL_BASE_URL}")
+    print(f"  Mode          : {'PATCH existing' if existing_assistant_id else 'CREATE new'}")
 
     with httpx.Client() as client:
-        if patch_only:
-            patch_prompt_only(client)
-            return
-
         pstn_id = ""
         sip_trunk_id = ""
 
         if not skip_numbers:
-            pstn_id = create_pstn_number(client)
-            sip_trunk_id = create_sip_number(client)
+            pstn_id = ensure_pstn_number(client)
+            sip_trunk_id = ensure_sip_number(client)
 
-        tool_ids = create_tools(client)
-        assistant_id = create_assistant(client, tool_ids)
+        tool_ids = ensure_tools(client)
 
-    print("\n=== Done — add these to your .env ===\n")
-    if pstn_id:
-        print(f"export VAPI_PHONE_NUMBER_ID={pstn_id}")
-    if sip_trunk_id:
-        print(f"export VAPI_SIP_TRUNK_ID={sip_trunk_id}")
-    print(f"export VAPI_ASSISTANT_ID={assistant_id}")
-    print()
-    if not pstn_id and not skip_numbers:
-        print("NOTE: No PSTN number was created. Buy one in the Vapi dashboard and set VAPI_PHONE_NUMBER_ID.")
-    if not sip_trunk_id and not skip_numbers:
-        print("NOTE: No SIP number was created. Create one manually in Vapi dashboard → Phone Numbers → Add → SIP.")
-    print()
-    print("Tool IDs (for reference):")
+        if existing_assistant_id:
+            patch_assistant(client, existing_assistant_id, tool_ids)
+            assistant_id = existing_assistant_id
+        else:
+            assistant_id = create_assistant(client, tool_ids)
+
+    print("\n=== Done ===\n")
+    if not existing_assistant_id:
+        print("New IDs — add these to your .env / Railway env vars:\n")
+        if pstn_id:
+            print(f"  VAPI_PHONE_NUMBER_ID={pstn_id}")
+        if sip_trunk_id:
+            print(f"  VAPI_SIP_TRUNK_ID={sip_trunk_id}")
+        print(f"  VAPI_ASSISTANT_ID={assistant_id}")
+    else:
+        print(f"  Assistant {assistant_id} patched — no new IDs needed.")
+
+    print("\nTool IDs (for reference):")
     for name, tid in tool_ids.items():
         print(f"  {name}: {tid}")
 
