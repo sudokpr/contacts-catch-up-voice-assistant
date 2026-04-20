@@ -9,6 +9,7 @@ from qdrant_client.models import (
     MatchValue,
     PayloadSchemaType,
     PointIdsList,
+    Document,
 )
 from app.models.memory import MemoryEntry
 from app.config import get_settings
@@ -21,7 +22,15 @@ def _get_client() -> AsyncQdrantClient:
     return AsyncQdrantClient(
         url=settings.QDRANT_ENDPOINT,
         api_key=settings.QDRANT_API_KEY,
+        cloud_inference=True,  # no-op when not using Document vectors
     )
+
+
+def _use_qdrant_inference() -> bool:
+    try:
+        return get_settings().EMBEDDING_PROVIDER == "qdrant"
+    except Exception:
+        return True
 
 
 async def ensure_collection_exists() -> None:
@@ -51,9 +60,7 @@ async def ensure_collection_exists() -> None:
 
 async def store_memory(entry: MemoryEntry) -> str:
     """Embeds entry.text and upserts into Qdrant. Returns point ID."""
-    from app.services.embedding import embed
-
-    vector = await embed(entry.text)
+    settings = get_settings()
     client = _get_client()
     payload = {
         "contact_id": entry.contact_id,
@@ -61,29 +68,35 @@ async def store_memory(entry: MemoryEntry) -> str:
         "text": entry.text,
         "timestamp": entry.timestamp.isoformat(),
     }
+
+    if _use_qdrant_inference():
+        vector = Document(text=entry.text, model=settings.EMBEDDING_MODEL)
+    else:
+        from app.services.embedding import embed
+        vector = await embed(entry.text)
+
     await client.upsert(
         collection_name=COLLECTION_NAME,
-        points=[
-            PointStruct(
-                id=entry.entry_id,
-                vector=vector,
-                payload=payload,
-            )
-        ],
+        points=[PointStruct(id=entry.entry_id, vector=vector, payload=payload)],
     )
     return entry.entry_id
 
 
 async def search_memory(contact_id: str, query: str, top_k: int = 5) -> list[MemoryEntry]:
     """
-    Embeds query, performs cosine similarity search scoped to contact_id.
-    Returns top_k results.
+    Searches Qdrant for top_k memories for contact_id matching query.
+    Uses Qdrant cloud inference or external embedding based on EMBEDDING_PROVIDER.
     """
-    from app.services.embedding import embed
     from datetime import datetime
-
-    vector = await embed(query)
+    settings = get_settings()
     client = _get_client()
+
+    if _use_qdrant_inference():
+        query_vector = Document(text=query, model=settings.EMBEDDING_MODEL)
+    else:
+        from app.services.embedding import embed
+        query_vector = await embed(query)
+
     contact_filter = Filter(
         must=[
             FieldCondition(
@@ -97,7 +110,7 @@ async def search_memory(contact_id: str, query: str, top_k: int = 5) -> list[Mem
     if callable(query_points_fn):
         response = await query_points_fn(
             collection_name=COLLECTION_NAME,
-            query=vector,
+            query=query_vector,
             query_filter=contact_filter,
             limit=top_k,
         )
@@ -106,10 +119,9 @@ async def search_memory(contact_id: str, query: str, top_k: int = 5) -> list[Mem
             results = points
 
     if results is None and hasattr(client, "search"):
-        # Backward compatibility with older qdrant-client versions.
         results = await client.search(  # type: ignore[attr-defined]
             collection_name=COLLECTION_NAME,
-            query_vector=vector,
+            query_vector=query_vector,
             query_filter=contact_filter,
             limit=top_k,
         )

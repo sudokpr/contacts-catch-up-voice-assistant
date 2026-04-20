@@ -22,11 +22,16 @@ class Settings(BaseSettings):
     QDRANT_API_KEY: str
     QDRANT_ENDPOINT: str
 
-    # Embedding — Gemini URL triggers native embedContent API; any other URL uses OpenAI-compat
-    EMBEDDING_API_KEY: str
-    EMBEDDING_BASE_URL: str
-    EMBEDDING_MODEL: str = "gemini-embedding-001"
-    EMBEDDING_VECTOR_SIZE: int = 3072  # 3072 for Gemini models; 768 for nomic-embed-text
+    # Embedding
+    # EMBEDDING_PROVIDER=qdrant  → Qdrant cloud inference (free, no external API needed)
+    # EMBEDDING_PROVIDER=external → Gemini (native API) or any OpenAI-compatible endpoint
+    EMBEDDING_PROVIDER: str = "qdrant"
+    EMBEDDING_MODEL: str = "sentence-transformers/all-minilm-l6-v2"
+    EMBEDDING_VECTOR_SIZE: int = 384  # 384 for all-minilm/e5-small; 3072 for Gemini
+
+    # Required only when EMBEDDING_PROVIDER=external
+    EMBEDDING_API_KEY: str = ""
+    EMBEDDING_BASE_URL: str = ""   # Gemini URL triggers native embedContent; others use OpenAI-compat
 
     # Auth — set APP_SECRET_KEY to protect the dashboard and API; empty = auth disabled
     APP_SECRET_KEY: str = ""
@@ -37,16 +42,14 @@ class Settings(BaseSettings):
     GOOGLE_REFRESH_TOKEN: str = ""
 
     # Optional: Vapi SIP trunk ID for SIP-mode contacts (separate from PSTN phone number)
-    # Create one in Vapi dashboard → Phone Numbers → Add → SIP Trunk
     VAPI_SIP_TRUNK_ID: str = ""
 
     # Public key for Vapi Web SDK (browser-safe; from Vapi dashboard → Account → Public Key)
-    # Enables browser-based WebRTC calls — free, no PSTN charges, passes variableValues correctly.
     VAPI_PUBLIC_KEY: str = ""
 
     # App identity (used in assistant prompts and webhook URL)
-    USER_NAME: str = "your friend"          # Name of the person on whose behalf calls are made
-    APP_BASE: str = ""                      # Public base URL, e.g. https://xyz.ngrok-free.dev
+    USER_NAME: str = "your friend"
+    APP_BASE: str = ""
 
 
 _REQUIRED_VARS = [
@@ -55,16 +58,10 @@ _REQUIRED_VARS = [
     "VAPI_PHONE_NUMBER_ID",
     "QDRANT_API_KEY",
     "QDRANT_ENDPOINT",
-    "EMBEDDING_API_KEY",
-    "EMBEDDING_BASE_URL",
 ]
 
 
 def get_settings() -> Settings:
-    """
-    Load and validate settings. Raises ConfigurationError with the variable name
-    if any required env var is missing.
-    """
     import os
 
     for var in _REQUIRED_VARS:
@@ -74,4 +71,13 @@ def get_settings() -> Settings:
                 f"Please set it before starting the application."
             )
 
-    return Settings()
+    settings = Settings()
+
+    if settings.EMBEDDING_PROVIDER == "external":
+        for var in ("EMBEDDING_API_KEY", "EMBEDDING_BASE_URL"):
+            if not getattr(settings, var):
+                raise ConfigurationError(
+                    f"EMBEDDING_PROVIDER=external requires '{var}' to be set."
+                )
+
+    return settings
