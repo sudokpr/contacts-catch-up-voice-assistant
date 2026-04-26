@@ -157,7 +157,7 @@ CONTACTS = [
         "social_handles": {"linkedin": "dr-priya-menon"},
         "memories": [
             ("highlight", "I got shortlisted for a fellowship at Johns Hopkins. I don't know if I should go."),
-            ("highlight", "Amma is getting older and I feel so guilty even thinking about leaving."),
+            ("highlight", "My mother is getting older and I feel so guilty even thinking about leaving."),
             ("highlight", "But it's Johns Hopkins, you know? This doesn't come twice."),
             ("fact", "Priya was shortlisted for a fellowship at Johns Hopkins in 2026."),
             ("fact", "Priya is conflicted about leaving Chennai and her aging mother."),
